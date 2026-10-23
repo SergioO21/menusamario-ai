@@ -18,3 +18,16 @@ body {
     rgb(var(--background-start-rgb));
   min-height: 100vh;
 }
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -1,6 +1,15 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import Dropdown from "../components/Dropdown";
+import {
+  ChatIcon,
+  CloseIcon,
+  MicIcon,
+  SendIcon,
+  UploadIcon,
+  UtensilsIcon
+} from "../components/icons";
 
 interface Dish {
   id: string;
@@ -28,11 +37,41 @@ const LANGUAGES: Array<{ code: LanguageCode; label: string; flag: string }> = [
   { code: "pt", label: "Português", flag: "🇧🇷" },
 ];
 
+type CurrencyCode = "COP" | "USD" | "EUR";
+
+const CURRENCIES: Array<{ code: CurrencyCode; symbol: string }> = [
+  { code: "COP", symbol: "$" },
+  { code: "USD", symbol: "US$" },
+  { code: "EUR", symbol: "€" },
+];
+
+// Nombre de la moneda en el idioma activo ("Peso colombiano", "US Dollar"...)
+const currencyName = (code: CurrencyCode, lang: LanguageCode) => {
+  try {
+    const name = new Intl.DisplayNames([lang], { type: "currency" }).of(code) ?? code;
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  } catch {
+    return code;
+  }
+};
+
+interface ChatMessage {
+  sender: "user" | "ai";
+  text: string;
+  dishIds?: string[];
+}
+
 const I18N = {
   es: {
     tagline: "Build with AI • DevFest Santa Marta 2026",
-    touristTab: "🍽️ Turista (Comensal)",
-    adminTab: "📄 Restaurantero (Subir PDF / Foto)",
+    touristTab: "Ver carta",
+    adminTab: "Subir carta",
+    language: "Idioma",
+    currency: "Moneda",
+    openChat: "Abrir chat con SaborAI",
+    closeChat: "Cerrar chat",
+    seeInMenu: "Ver en la carta",
+    voiceInput: "Dictar por voz",
     liveMenu: "Carta en Vivo",
     subtitle: "Bahía de Taganga, Santa Marta • Especialidad en Pesca del Día y Cayeye Criollo",
     specialties: "Platos & Especialidades",
@@ -61,8 +100,14 @@ const I18N = {
   },
   en: {
     tagline: "Build with AI • DevFest Santa Marta 2026",
-    touristTab: "🍽️ Tourist (Diner)",
-    adminTab: "📄 Restaurant (Upload PDF / Photo)",
+    touristTab: "Menu",
+    adminTab: "Upload menu",
+    language: "Language",
+    currency: "Currency",
+    openChat: "Open SaborAI chat",
+    closeChat: "Close chat",
+    seeInMenu: "Show in menu",
+    voiceInput: "Voice input",
     liveMenu: "Live Menu",
     subtitle: "Taganga Bay, Santa Marta • Fresh Catch of the Day & Traditional Cayeye",
     specialties: "Dishes & Specialties",
@@ -91,8 +136,14 @@ const I18N = {
   },
   fr: {
     tagline: "Build with AI • DevFest Santa Marta 2026",
-    touristTab: "🍽️ Touriste (Client)",
-    adminTab: "📄 Restaurateur (Importer PDF / Photo)",
+    touristTab: "Menu",
+    adminTab: "Importer un menu",
+    language: "Langue",
+    currency: "Devise",
+    openChat: "Ouvrir le chat SaborAI",
+    closeChat: "Fermer le chat",
+    seeInMenu: "Voir dans le menu",
+    voiceInput: "Saisie vocale",
     liveMenu: "Menu en Direct",
     subtitle: "Baie de Taganga, Santa Marta • Poisson frais du jour et Cayeye traditionnel",
     specialties: "Plats & Spécialités",
@@ -121,8 +172,14 @@ const I18N = {
   },
   de: {
     tagline: "Build with AI • DevFest Santa Marta 2026",
-    touristTab: "🍽️ Tourist (Gast)",
-    adminTab: "📄 Restaurant (PDF / Foto hochladen)",
+    touristTab: "Speisekarte",
+    adminTab: "Karte hochladen",
+    language: "Sprache",
+    currency: "Währung",
+    openChat: "SaborAI-Chat öffnen",
+    closeChat: "Chat schließen",
+    seeInMenu: "In der Karte zeigen",
+    voiceInput: "Spracheingabe",
     liveMenu: "Aktuelle Speisekarte",
     subtitle: "Taganga-Bucht, Santa Marta • Fangfrischer Fisch & traditionelles Cayeye",
     specialties: "Gerichte & Spezialitäten",
@@ -151,8 +208,14 @@ const I18N = {
   },
   pt: {
     tagline: "Build with AI • DevFest Santa Marta 2026",
-    touristTab: "🍽️ Turista (Cliente)",
-    adminTab: "📄 Restaurante (Enviar PDF / Foto)",
+    touristTab: "Cardápio",
+    adminTab: "Enviar cardápio",
+    language: "Idioma",
+    currency: "Moeda",
+    openChat: "Abrir chat com SaborAI",
+    closeChat: "Fechar chat",
+    seeInMenu: "Ver no cardápio",
+    voiceInput: "Entrada por voz",
     liveMenu: "Cardápio ao Vivo",
     subtitle: "Baía de Taganga, Santa Marta • Peixe fresco do dia e Cayeye tradicional",
     specialties: "Pratos e Especialidades",
@@ -231,12 +294,12 @@ export default function Home() {
   const [isCustomMenu, setIsCustomMenu] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [highlightedDishIds, setHighlightedDishIds] = useState<string[]>([]);
-  const [currency, setCurrency] = useState<"COP" | "USD" | "EUR">("COP");
+  const [currency, setCurrency] = useState<CurrencyCode>("COP");
 
   const t = I18N[lang];
 
   // Chat state
-  const [messages, setMessages] = useState<Array<{ sender: "user" | "ai"; text: string }>>([
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
       sender: "ai",
       text: t.welcomeMessage
@@ -245,6 +308,13 @@ export default function Home() {
   const [inputMessage, setInputMessage] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [seenCount, setSeenCount] = useState(0);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
+  const chatBubbleRef = useRef<HTMLButtonElement>(null);
+
+  const unreadCount = messages.slice(seenCount).filter((m) => m.sender === "ai").length;
 
   // Admin upload state (Supports both Images and PDFs)
   const [selectedFile, setSelectedFile] = useState<{
@@ -258,24 +328,79 @@ export default function Home() {
   const [parseStatus, setParseStatus] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Con el chat abierto: marcar como leído y bajar al último mensaje
+  useEffect(() => {
+    if (!isChatOpen) return;
+    setSeenCount(messages.length);
+    const list = chatScrollRef.current;
+    list?.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+  }, [isChatOpen, messages.length, isChatLoading]);
+
+  // En móvil el chat ocupa toda la pantalla: bloquear el scroll de fondo.
+  // En escritorio, enfocar el campo de texto. Escape cierra en ambos.
+  useEffect(() => {
+    if (!isChatOpen) return;
+    const isMobile = window.matchMedia("(max-width: 639px)").matches;
+    const previousOverflow = document.body.style.overflow;
+    if (isMobile) {
+      document.body.style.overflow = "hidden";
+    } else {
+      chatInputRef.current?.focus({ preventScroll: true });
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsChatOpen(false);
+        chatBubbleRef.current?.focus({ preventScroll: true });
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isChatOpen]);
+
+  const closeChat = () => {
+    setIsChatOpen(false);
+    chatBubbleRef.current?.focus({ preventScroll: true });
+  };
+
+  const switchTab = (tab: "turista" | "admin") => {
+    setActiveTab(tab);
+    setIsChatOpen(false);
+  };
+
   const formatPrice = (cop: number) => {
     if (currency === "USD") {
-      return `$${(cop / 4000).toFixed(1)} USD`;
+      return { amount: `$${(cop / 4000).toFixed(2)}`, code: "USD" };
     }
     if (currency === "EUR") {
-      return `€${(cop / 4300).toFixed(1)} EUR`;
+      return { amount: `€${(cop / 4300).toFixed(2)}`, code: "EUR" };
     }
-    return `$${cop.toLocaleString("es-CO")} COP`;
+    return { amount: `$${cop.toLocaleString("es-CO")}`, code: "COP" };
   };
 
   const handleLanguageChange = (newLang: LanguageCode) => {
     setLang(newLang);
     const newT = I18N[newLang];
-    // Mensaje de bienvenida en el nuevo idioma
-    setMessages((prev) => [
-      ...prev,
-      { sender: "ai", text: newT.welcomeMessage }
-    ]);
+    // Si la conversación no ha empezado, reemplazar el saludo en vez de acumularlo
+    setMessages((prev) =>
+      prev.length === 1
+        ? [{ sender: "ai", text: newT.welcomeMessage }]
+        : [...prev, { sender: "ai", text: newT.welcomeMessage }]
+    );
+  };
+
+  // Resalta los platos recomendados y los lleva a la vista
+  const showDishesInMenu = (dishIds: string[]) => {
+    setHighlightedDishIds(dishIds);
+    if (window.matchMedia("(max-width: 639px)").matches) setIsChatOpen(false);
+    requestAnimationFrame(() => {
+      const target = dishIds
+        .map((id) => document.getElementById(`dish-${id}`))
+        .find(Boolean);
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
   };
 
   const handleSendMessage = async (textToSend?: string) => {
@@ -295,9 +420,12 @@ export default function Home() {
       });
       const data = await res.json();
 
-      setMessages((prev) => [...prev, { sender: "ai", text: data.reply }]);
-      if (data.recommendedDishIds && data.recommendedDishIds.length > 0) {
-        setHighlightedDishIds(data.recommendedDishIds);
+      const dishIds: string[] = (data.recommendedDishIds || []).filter((id: string) =>
+        menu.dishes.some((dish) => dish.id === id)
+      );
+      setMessages((prev) => [...prev, { sender: "ai", text: data.reply, dishIds }]);
+      if (dishIds.length > 0) {
+        setHighlightedDishIds(dishIds);
       }
     } catch (err) {
       setMessages((prev) => [
@@ -416,398 +544,472 @@ export default function Home() {
     }
   };
 
+  // Selector de modo: en móvil y tablet va bajo el header, en escritorio dentro de él
+  const renderModeSwitch = (className: string) => (
+    <div className={`grid grid-cols-2 rounded-full bg-slate-100 p-1 text-sm font-semibold ${className}`}>
+      {(["turista", "admin"] as const).map((tab) => (
+        <button
+          key={tab}
+          type="button"
+          aria-pressed={activeTab === tab}
+          onClick={() => switchTab(tab)}
+          className={`flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+            activeTab === tab
+              ? "bg-white text-teal-800 shadow-sm"
+              : "text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          {tab === "turista" ? (
+            <UtensilsIcon className="h-4 w-4" />
+          ) : (
+            <UploadIcon className="h-4 w-4" />
+          )}
+          <span>{tab === "turista" ? t.touristTab : t.adminTab}</span>
+        </button>
+      ))}
+    </div>
+  );
+
+  const activeLanguage = LANGUAGES.find((item) => item.code === lang) ?? LANGUAGES[0];
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-12">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
       {/* Navbar Superior */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+      <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-2.5 sm:py-3">
           {/* Logo */}
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-teal-500 flex items-center justify-center text-white text-xl shadow-md">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500 to-teal-500 text-lg text-white shadow-sm sm:h-10 sm:w-10">
               🌴
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="font-bold text-lg leading-tight text-slate-800">MenúSamario AI</h1>
-                <span className="text-xs bg-teal-100 text-teal-800 font-semibold px-2 py-0.5 rounded-full">
-                  Build with AI
-                </span>
+                <h1 className="truncate font-display text-base font-bold leading-tight text-slate-900 sm:text-lg">
+                  MenúSamario AI
+                </h1>
               </div>
-              <p className="text-xs text-slate-500">{t.tagline}</p>
+              <p className="hidden text-xs text-slate-500 sm:block">{t.tagline}</p>
             </div>
           </div>
 
-          {/* Selectores: Idioma, Moneda y Modo */}
-          <div className="flex items-center space-x-2 flex-wrap gap-y-2">
-            {/* Selector de Idiomas */}
-            <div className="flex bg-slate-100 rounded-lg p-1 text-xs font-medium text-slate-700">
-              {LANGUAGES.map((item) => (
-                <button
-                  key={item.code}
-                  onClick={() => handleLanguageChange(item.code)}
-                  title={item.label}
-                  className={`px-2 py-1 rounded transition flex items-center gap-1 ${
-                    lang === item.code
-                      ? "bg-white text-teal-800 font-bold shadow-xs"
-                      : "hover:text-slate-900 opacity-80 hover:opacity-100"
-                  }`}
-                >
-                  <span>{item.flag}</span>
-                  <span className="uppercase text-[10px] font-bold">{item.code}</span>
-                </button>
-              ))}
-            </div>
+          {renderModeSwitch("hidden lg:grid")}
 
-            {/* Moneda */}
-            <div className="flex bg-slate-100 rounded-lg p-1 text-xs font-medium text-slate-600">
-              {(["COP", "USD", "EUR"] as const).map((curr) => (
-                <button
-                  key={curr}
-                  onClick={() => setCurrency(curr)}
-                  className={`px-2 py-1 rounded ${
-                    currency === curr ? "bg-white text-slate-900 shadow-xs font-bold" : ""
-                  }`}
-                >
-                  {curr}
-                </button>
-              ))}
-            </div>
+          {/* Selectores: Idioma y Moneda */}
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Dropdown<LanguageCode>
+              label={t.language}
+              value={lang}
+              onChange={handleLanguageChange}
+              options={LANGUAGES.map((item) => ({
+                value: item.code,
+                label: item.label,
+                icon: item.flag
+              }))}
+            >
+              <span className="text-base leading-none">{activeLanguage.flag}</span>
+              <span className="hidden text-xs font-bold uppercase sm:inline">{activeLanguage.code}</span>
+            </Dropdown>
 
-            {/* Pestañas Modo */}
-            <div className="flex bg-teal-50 border border-teal-200 rounded-lg p-1 text-xs font-medium">
-              <button
-                onClick={() => setActiveTab("turista")}
-                className={`px-3 py-1.5 rounded-md transition ${
-                  activeTab === "turista"
-                    ? "bg-teal-600 text-white font-semibold shadow-xs"
-                    : "text-teal-800 hover:text-teal-950"
-                }`}
-              >
-                {t.touristTab}
-              </button>
-              <button
-                onClick={() => setActiveTab("admin")}
-                className={`px-3 py-1.5 rounded-md transition ${
-                  activeTab === "admin"
-                    ? "bg-teal-600 text-white font-semibold shadow-xs"
-                    : "text-teal-800 hover:text-teal-950"
-                }`}
-              >
-                {t.adminTab}
-              </button>
-            </div>
+            <Dropdown<CurrencyCode>
+              label={t.currency}
+              value={currency}
+              onChange={setCurrency}
+              options={CURRENCIES.map((item) => ({
+                value: item.code,
+                label: item.code,
+                hint: currencyName(item.code, lang),
+                icon: (
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-600">
+                    {item.symbol}
+                  </span>
+                )
+              }))}
+            >
+              <span className="text-xs font-bold">{currency}</span>
+            </Dropdown>
           </div>
         </div>
       </header>
 
       {/* Contenido Principal */}
-      <main className="max-w-6xl mx-auto px-4 mt-6">
+      <main className="mx-auto max-w-5xl px-4 pb-32 pt-4 sm:pt-6">
+        {renderModeSwitch("mb-4 lg:hidden")}
+
         {activeTab === "turista" ? (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Columna Izquierda: Menú Digital (7 columnas) */}
-            <div className="lg:col-span-7 space-y-4">
-              <div className="bg-gradient-to-r from-teal-700 to-emerald-800 rounded-2xl p-5 text-white shadow-md relative overflow-hidden">
-                <div className="relative z-10">
-                  <span className="text-xs bg-teal-900/60 text-teal-200 px-2.5 py-1 rounded-full uppercase tracking-wider font-semibold">
-                    {t.liveMenu}
-                  </span>
-                  <h2 className="text-2xl font-black mt-1">{menu.restaurantName}</h2>
-                  <p className="text-teal-100 text-xs mt-1">{t.subtitle}</p>
-                </div>
-                <div className="absolute -right-4 -bottom-4 text-7xl opacity-20 pointer-events-none">
-                  🐟
-                </div>
+          <div className="space-y-5">
+            {/* Portada del restaurante */}
+            <section className="relative overflow-hidden rounded-3xl bg-teal-900 px-5 pb-12 pt-5 text-white sm:px-8 sm:pb-14 sm:pt-7">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-teal-100">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                {t.liveMenu}
+              </span>
+              <h2 className="mt-3 text-balance font-display text-3xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl">
+                {menu.restaurantName}
+              </h2>
+              <p className="mt-3 max-w-xl text-sm leading-relaxed text-teal-100/90 sm:text-base">
+                {t.subtitle}
+              </p>
+              {/* Mar y arena */}
+              <svg
+                viewBox="0 0 400 40"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-0 bottom-0 h-8 w-full sm:h-10"
+              >
+                <path d="M0 20 C50 8 100 8 150 20 S250 34 300 22 S370 10 400 16 V40 H0Z" fill="rgb(45 212 191 / 0.22)" />
+                <path d="M0 30 C60 20 120 22 180 30 S300 40 400 27 V40 H0Z" fill="#f2d29b" />
+              </svg>
+            </section>
+
+            {isCustomMenu && (
+              <div className="flex flex-col gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 sm:flex-row sm:items-center sm:justify-between">
+                <p>
+                  ✨ <strong>¡Carta digitalizada activa!</strong> {menu.dishes.length} platos cargados para{" "}
+                  <em>{menu.restaurantName}</em>.
+                </p>
+                <button
+                  onClick={() => {
+                    setMenu(DEFAULT_MENU);
+                    setIsCustomMenu(false);
+                    setHighlightedDishIds([]);
+                  }}
+                  className="shrink-0 self-start font-semibold text-teal-800 underline underline-offset-2 hover:text-teal-950 sm:self-auto"
+                >
+                  Restaurar menú demo
+                </button>
+              </div>
+            )}
+
+            {/* Lista de Platos */}
+            <section className="space-y-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="font-display text-xl font-bold text-slate-900">
+                  {t.specialties}{" "}
+                  <span className="font-sans text-base font-medium text-slate-400">{menu.dishes.length}</span>
+                </h3>
+                {highlightedDishIds.length > 0 && (
+                  <button
+                    onClick={() => setHighlightedDishIds([])}
+                    className="shrink-0 text-sm font-semibold text-amber-700 hover:underline"
+                  >
+                    {t.clearHighlight}
+                  </button>
+                )}
               </div>
 
-              {isCustomMenu && (
-                <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 text-emerald-800 px-3.5 py-2.5 rounded-xl text-xs font-medium shadow-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base">✨</span>
-                    <span><strong>¡Carta digitalizada activa!</strong> {menu.dishes.length} platos cargados para <em>{menu.restaurantName}</em>.</span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setMenu(DEFAULT_MENU);
-                      setIsCustomMenu(false);
-                      setHighlightedDishIds([]);
-                    }}
-                    className="text-[11px] text-teal-800 hover:text-teal-950 underline font-semibold shrink-0"
-                  >
-                    Restaurar menú demo
-                  </button>
-                </div>
-              )}
-
-              {/* Lista de Platos */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide">
-                    {t.specialties} ({menu.dishes.length})
-                  </h3>
-                  {highlightedDishIds.length > 0 && (
-                    <button
-                      onClick={() => setHighlightedDishIds([])}
-                      className="text-xs text-amber-600 font-semibold hover:underline"
-                    >
-                      {t.clearHighlight}
-                    </button>
-                  )}
-                </div>
-
+              <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
                 {menu.dishes.map((dish) => {
                   const isHighlighted = highlightedDishIds.includes(dish.id);
+                  const price = formatPrice(dish.priceCOP);
+                  const hasAllergens = dish.allergens && dish.allergens.length > 0;
                   return (
-                    <div
+                    <article
                       key={dish.id}
-                      className={`p-4 rounded-xl border transition-all duration-300 ${
+                      id={`dish-${dish.id}`}
+                      className={`scroll-mt-24 rounded-2xl border p-4 transition-colors duration-300 sm:p-5 ${
                         isHighlighted
-                          ? "bg-amber-50/90 border-amber-400 shadow-md ring-2 ring-amber-400/50 scale-[1.01]"
-                          : "bg-white border-slate-200 hover:border-slate-300 shadow-xs"
+                          ? "border-amber-300 bg-amber-50 ring-2 ring-amber-400/60"
+                          : "border-slate-200/80 bg-white"
                       }`}
                     >
-                      <div className="flex justify-between items-start gap-3">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-bold text-base text-slate-900">{dish.name}</h4>
-                            {dish.isVegetarian && (
-                              <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-semibold">
-                                {t.veggie}
-                              </span>
-                            )}
-                            {isHighlighted && (
-                              <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold animate-pulse">
-                                {t.aiRecommended}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-600 leading-relaxed">
-                            {dish.description}
-                          </p>
-                          {dish.localHighlight && (
-                            <p className="text-[11px] text-teal-700 bg-teal-50/80 rounded px-2 py-1 inline-block font-medium">
-                              🌴 {dish.localHighlight}
-                            </p>
-                          )}
-                        </div>
+                      {isHighlighted && (
+                        <span className="mb-2.5 inline-flex rounded-full bg-amber-400 px-2.5 py-0.5 text-[11px] font-bold text-amber-950">
+                          {t.aiRecommended}
+                        </span>
+                      )}
 
-                        <div className="text-right shrink-0">
-                          <span className="font-black text-emerald-700 text-base">
-                            {formatPrice(dish.priceCOP)}
+                      <div className="flex items-start justify-between gap-4">
+                        <h4 className="font-display text-lg font-bold leading-snug text-slate-900">
+                          {dish.name}
+                        </h4>
+                        <p className="shrink-0 pt-0.5 text-right leading-none">
+                          <span className="font-display text-lg font-extrabold text-teal-800">
+                            {price.amount}
                           </span>
-                        </div>
+                          <span className="mt-1 block text-[10px] font-semibold text-slate-400">
+                            {price.code}
+                          </span>
+                        </p>
                       </div>
 
-                      {/* Alérgenos */}
-                      {dish.allergens && dish.allergens.length > 0 && (
-                        <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] text-slate-600 font-semibold uppercase">
-                            {t.allergens}
-                          </span>
+                      <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{dish.description}</p>
+
+                      {dish.localHighlight && (
+                        <p className="mt-3 flex gap-2 rounded-xl bg-teal-50 px-3 py-2 text-[13px] leading-snug text-teal-800">
+                          <span aria-hidden="true">🌴</span>
+                          <span>{dish.localHighlight}</span>
+                        </p>
+                      )}
+
+                      {/* Vegetariano y alérgenos */}
+                      {(dish.isVegetarian || hasAllergens) && (
+                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                          {dish.isVegetarian && (
+                            <span className="rounded-full bg-green-100 px-2.5 py-1 text-[11px] font-semibold text-green-800">
+                              {t.veggie}
+                            </span>
+                          )}
+                          {hasAllergens && (
+                            <span className="ml-0.5 text-[11px] font-semibold text-slate-500">{t.allergens}</span>
+                          )}
                           {dish.allergens.map((alg) => (
                             <span
                               key={alg}
-                              className="text-[10px] bg-rose-50 text-rose-700 border border-rose-200 px-1.5 py-0.5 rounded font-medium"
+                              className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-700"
                             >
-                              ⚠️ {alg}
+                              {alg}
                             </span>
                           ))}
                         </div>
                       )}
-                    </div>
+                    </article>
                   );
                 })}
               </div>
-            </div>
-
-            {/* Columna Derecha: Asistente SaborAI Concierge (5 columnas) */}
-            <div className="lg:col-span-5 flex flex-col h-[640px] bg-white rounded-2xl border border-slate-200 shadow-md overflow-hidden sticky top-20">
-              <div className="bg-gradient-to-r from-teal-600 to-teal-700 p-4 text-white flex items-center justify-between">
-                <div className="flex items-center space-x-2.5">
-                  <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-base">
-                    🤖
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm">{t.conciergeTitle}</h3>
-                    <p className="text-[11px] text-teal-100">{t.conciergeSubtitle}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 text-[11px] bg-teal-800 text-teal-200 px-2.5 py-1 rounded-full font-medium">
-                  <span>Gemini Flash</span>
-                </div>
-              </div>
-
-              {/* Chips Rápidos de Prueba en el idioma activo */}
-              <div className="p-2.5 bg-slate-50 border-b border-slate-200 overflow-x-auto flex gap-1.5 no-scrollbar text-xs">
-                {t.chips.map((chip, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleSendMessage(chip.prompt)}
-                    className="bg-white border border-slate-200 hover:border-teal-500 text-slate-700 px-2.5 py-1 rounded-full shrink-0 transition text-[11px] font-medium"
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Mensajes del Chat */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3 text-xs leading-relaxed">
-                {messages.map((m, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 ${
-                        m.sender === "user"
-                          ? "bg-teal-600 text-white rounded-br-none"
-                          : "bg-slate-100 text-slate-800 rounded-bl-none border border-slate-200/80"
-                      }`}
-                    >
-                      {m.text}
-                    </div>
-                  </div>
-                ))}
-                {isChatLoading && (
-                  <div className="flex justify-start">
-                    <div className="bg-slate-100 border border-slate-200 rounded-2xl rounded-bl-none px-3.5 py-2 text-slate-500 text-xs flex items-center space-x-1.5">
-                      <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-bounce"></span>
-                      <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-bounce [animation-delay:0.2s]"></span>
-                      <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-bounce [animation-delay:0.4s]"></span>
-                      <span className="ml-1 text-[11px]">{t.thinking}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Caja de entrada con micrófono */}
-              <div className="p-3 bg-white border-t border-slate-200">
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }}
-                  className="flex items-center space-x-2"
-                >
-                  <button
-                    type="button"
-                    onClick={handleVoiceInput}
-                    className={`p-2.5 rounded-xl border transition ${
-                      isRecording
-                        ? "bg-rose-500 text-white border-rose-600 animate-pulse"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200"
-                    }`}
-                    title="Hablar por micrófono"
-                  >
-                    🎙️
-                  </button>
-                  <input
-                    type="text"
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    placeholder={t.inputPlaceholder}
-                    className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isChatLoading || !inputMessage.trim()}
-                    className="bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-semibold px-3.5 py-2 rounded-xl text-xs transition"
-                  >
-                    {t.send}
-                  </button>
-                </form>
-              </div>
-            </div>
+            </section>
           </div>
         ) : (
           /* MODO RESTAURANTERO (CARGAR PDF O FOTO) */
-          <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-md p-6 space-y-6">
-            <div className="text-center space-y-1">
-              <span className="text-4xl">📄</span>
-              <h2 className="text-xl font-black text-slate-900">{t.adminTitle}</h2>
-              <p className="text-xs text-slate-500 max-w-lg mx-auto">{t.adminSubtitle}</p>
+          <section className="mx-auto max-w-2xl space-y-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+            <div className="space-y-2 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-50 text-teal-700">
+                <UploadIcon className="h-6 w-6" />
+              </div>
+              <h2 className="text-balance font-display text-2xl font-extrabold leading-tight text-slate-900 sm:text-3xl">
+                {t.adminTitle}
+              </h2>
+              <p className="mx-auto max-w-lg text-sm leading-relaxed text-slate-500">{t.adminSubtitle}</p>
             </div>
 
             {/* Zona de Subida de Archivo (PDF o Imagen) */}
-            <div
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+            <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-teal-300 hover:border-teal-500 bg-teal-50/50 hover:bg-teal-50 rounded-2xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center min-h-[220px]"
+              className="flex min-h-[200px] w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-teal-300 bg-teal-50/50 p-5 text-center transition hover:border-teal-500 hover:bg-teal-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 sm:min-h-[220px] sm:p-6"
             >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,application/pdf"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-
               {selectedFile ? (
-                <div className="space-y-3">
+                <span className="block space-y-3">
                   {selectedFile.isPdf ? (
-                    <div className="flex flex-col items-center p-4 bg-white rounded-xl border border-teal-200 shadow-xs max-w-sm mx-auto">
-                      <span className="text-5xl mb-2">📑</span>
-                      <p className="font-bold text-slate-800 text-sm text-center break-all">
+                    <span className="mx-auto flex max-w-sm flex-col items-center rounded-xl border border-teal-200 bg-white p-4 shadow-sm">
+                      <span className="mb-2 text-5xl">📑</span>
+                      <span className="break-all text-center text-sm font-bold text-slate-800">
                         {selectedFile.name}
-                      </p>
-                      <span className="text-[11px] bg-red-100 text-red-700 font-semibold px-2.5 py-0.5 rounded-full mt-1">
+                      </span>
+                      <span className="mt-1 rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-semibold text-red-700">
                         Documento PDF ({selectedFile.sizeKB} KB)
                       </span>
-                    </div>
+                    </span>
                   ) : (
                     <img
                       src={selectedFile.base64}
                       alt="Previsualización del menú"
-                      className="max-h-56 rounded-lg shadow-xs mx-auto object-contain border"
+                      className="mx-auto max-h-56 rounded-lg border object-contain shadow-sm"
                     />
                   )}
-                  <p className="text-xs text-teal-700 font-medium">
-                    Clic para cambiar archivo
-                  </p>
-                </div>
+                  <span className="block text-xs font-medium text-teal-700">Clic para cambiar archivo</span>
+                </span>
               ) : (
-                <div className="space-y-2 text-slate-600">
-                  <div className="w-14 h-14 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-2xl mx-auto shadow-xs">
+                <span className="block space-y-2 text-slate-600">
+                  <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-teal-100 text-2xl text-teal-700">
                     📁
-                  </div>
-                  <p className="text-sm font-bold text-slate-800">{t.uploadPrompt}</p>
-                  <p className="text-xs text-slate-500">{t.uploadFormats}</p>
-                </div>
+                  </span>
+                  <span className="block text-sm font-bold text-slate-800">{t.uploadPrompt}</span>
+                  <span className="block text-xs text-slate-500">{t.uploadFormats}</span>
+                </span>
               )}
-            </div>
+            </button>
 
             {/* Botón de Procesamiento con IA */}
             <div className="space-y-3">
               <button
                 onClick={handleParseMenu}
                 disabled={!selectedFile || isParsing}
-                className="w-full bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 disabled:opacity-50 text-white font-bold py-3.5 px-4 rounded-xl text-sm shadow-md transition flex items-center justify-center space-x-2"
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 py-3.5 text-base font-bold text-white shadow-md transition hover:from-teal-700 hover:to-emerald-700 disabled:opacity-50 sm:text-sm"
               >
                 {isParsing ? (
                   <>
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
                     <span>{t.processing}</span>
                   </>
                 ) : (
-                  <>
-                    <span>{t.processButton}</span>
-                  </>
+                  <span>{t.processButton}</span>
                 )}
               </button>
 
               {parseStatus && (
                 <div
-                  className={`text-center text-xs font-semibold py-2.5 px-3 rounded-lg border ${
+                  className={`rounded-xl border px-3 py-2.5 text-center text-sm font-semibold ${
                     parseError
-                      ? "text-rose-800 bg-rose-50 border-rose-200"
-                      : "text-teal-800 bg-teal-50 border-teal-200"
+                      ? "border-rose-200 bg-rose-50 text-rose-800"
+                      : "border-teal-200 bg-teal-50 text-teal-800"
                   }`}
                 >
                   {parseStatus}
                 </div>
               )}
             </div>
-          </div>
+          </section>
         )}
       </main>
+
+      {/* Asistente SaborAI Concierge: burbuja flotante + panel */}
+      {activeTab === "turista" && (
+        <>
+          <section
+            role="dialog"
+            aria-label={t.conciergeTitle}
+            className={`fixed inset-0 z-50 flex flex-col overflow-hidden bg-white transition-[opacity,transform,visibility] duration-300 ease-out motion-reduce:transition-none sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[min(640px,calc(100dvh-8rem))] sm:w-[400px] sm:origin-bottom-right sm:rounded-3xl sm:border sm:border-slate-200 sm:shadow-2xl sm:shadow-slate-900/20 ${
+              isChatOpen
+                ? "visible translate-y-0 opacity-100 sm:scale-100"
+                : "pointer-events-none invisible translate-y-full opacity-0 sm:translate-y-4 sm:scale-95"
+            }`}
+          >
+            <header className="flex items-center gap-3 bg-teal-900 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-white">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-lg">
+                🤖
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-display font-bold leading-tight">{t.conciergeTitle}</h3>
+                <p className="truncate text-xs text-teal-100/80">{t.conciergeSubtitle}</p>
+              </div>
+              <span className="hidden rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-teal-100 sm:inline">
+                Gemini Flash
+              </span>
+              <button
+                type="button"
+                onClick={closeChat}
+                aria-label={t.closeChat}
+                className="-mr-1.5 flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              >
+                <CloseIcon className="h-5 w-5" />
+              </button>
+            </header>
+
+            {/* Mensajes del Chat */}
+            <div
+              ref={chatScrollRef}
+              className="flex-1 space-y-3 overflow-y-auto overscroll-contain bg-slate-50 px-4 py-4 text-sm leading-relaxed"
+            >
+              {messages.map((m, idx) => (
+                <div
+                  key={idx}
+                  className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 ${
+                      m.sender === "user"
+                        ? "rounded-br-md bg-teal-700 text-white"
+                        : "rounded-bl-md border border-slate-200/80 bg-white text-slate-800 shadow-sm"
+                    }`}
+                  >
+                    <p className="whitespace-pre-line">{m.text}</p>
+                    {m.dishIds && m.dishIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => showDishesInMenu(m.dishIds!)}
+                        className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-200"
+                      >
+                        ⭐ {t.seeInMenu} ({m.dishIds.length})
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {isChatLoading && (
+                <div className="flex justify-start">
+                  <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-md border border-slate-200/80 bg-white px-3.5 py-2.5 text-xs text-slate-500 shadow-sm">
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500"></span>
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500 [animation-delay:0.2s]"></span>
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500 [animation-delay:0.4s]"></span>
+                    <span className="ml-1">{t.thinking}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Preguntas rápidas + caja de entrada con micrófono */}
+            <div className="border-t border-slate-200 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5">
+              <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 pb-2.5">
+                {t.chips.map((chip, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSendMessage(chip.prompt)}
+                    disabled={isChatLoading}
+                    className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-teal-500 hover:text-teal-800 disabled:opacity-50"
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSendMessage();
+                }}
+                className="mx-4 flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 p-1 transition focus-within:border-teal-500 focus-within:bg-white focus-within:ring-2 focus-within:ring-teal-500/20"
+              >
+                <button
+                  type="button"
+                  onClick={handleVoiceInput}
+                  aria-label={t.voiceInput}
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition ${
+                    isRecording
+                      ? "animate-pulse bg-rose-500 text-white"
+                      : "text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                  }`}
+                >
+                  <MicIcon className="h-5 w-5" />
+                </button>
+                <input
+                  ref={chatInputRef}
+                  type="text"
+                  value={inputMessage}
+                  onChange={(e) => setInputMessage(e.target.value)}
+                  placeholder={t.inputPlaceholder}
+                  enterKeyHint="send"
+                  className="min-w-0 flex-1 text-ellipsis bg-transparent px-1 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none sm:text-sm"
+                />
+                <button
+                  type="submit"
+                  aria-label={t.send}
+                  disabled={isChatLoading || !inputMessage.trim()}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-700 text-white transition hover:bg-teal-800 disabled:bg-slate-300"
+                >
+                  <SendIcon className="h-5 w-5" />
+                </button>
+              </form>
+            </div>
+          </section>
+
+          {/* Burbuja: en móvil se oculta con el chat abierto (el panel trae su botón de cerrar) */}
+          <button
+            ref={chatBubbleRef}
+            type="button"
+            onClick={() => (isChatOpen ? closeChat() : setIsChatOpen(true))}
+            aria-label={isChatOpen ? t.closeChat : t.openChat}
+            aria-expanded={isChatOpen}
+            className={`fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-teal-700 text-white shadow-lg shadow-teal-900/30 transition hover:bg-teal-800 focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-500/40 active:scale-95 sm:right-6 ${
+              isChatOpen ? "max-sm:hidden" : ""
+            }`}
+          >
+            {isChatOpen ? <CloseIcon className="h-6 w-6" /> : <ChatIcon className="h-6 w-6" />}
+            {!isChatOpen && unreadCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-400 px-1 text-[11px] font-bold text-amber-950 ring-2 ring-slate-50">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+        </>
+      )}
     </div>
   );
 }
