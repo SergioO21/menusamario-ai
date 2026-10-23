@@ -61,3 +61,17 @@ export const UtensilsIcon = (props: IconProps) => (
     <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2M7 2v20M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
   </svg>
 );
+
+export const LeafIcon = (props: IconProps) => (
+  <svg {...base} {...props}>
+    <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z" />
+    <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12" />
+  </svg>
+);
+
+export const FileIcon = (props: IconProps) => (
+  <svg {...base} {...props}>
+    <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+    <path d="M14 2v4a2 2 0 0 0 2 2h4M9 13h6M9 17h4" />
+  </svg>
+);

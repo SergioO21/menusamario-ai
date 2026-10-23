@@ -1,19 +1,27 @@
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque } from "next/font/google";
+import { Fraunces, Instrument_Sans } from "next/font/google";
 import "./globals.css";
 
-const display = Bricolage_Grotesque({
+const display = Fraunces({
   subsets: ["latin"],
+  style: ["normal", "italic"],
+  axes: ["opsz", "SOFT"],
   variable: "--font-display",
   display: "swap",
 });
 
+const sans = Instrument_Sans({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
-  title: "MenúSamario AI",
-  description: "Digitalización gastronómica con IA multimodal para Santa Marta y el Caribe",
+  title: "MenúSamario",
+  description: "Cartas digitales con IA multimodal para Santa Marta y el Caribe",
   openGraph: {
-    title: "MenúSamario AI",
-    description: "Digitalización gastronómica con IA multimodal para Santa Marta y el Caribe",
+    title: "MenúSamario",
+    description: "Cartas digitales con IA multimodal para Santa Marta y el Caribe",
   },
 };
 
@@ -23,7 +31,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   interactiveWidget: "resizes-content",
-  themeColor: "#ffffff",
+  themeColor: "#F4EEE2",
 };
 
 export default function RootLayout({
@@ -32,7 +40,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={display.variable}>
+    <html lang="es" className={`${display.variable} ${sans.variable}`}>
       <body className="antialiased">{children}</body>
     </html>
   );
