@@ -11,7 +11,19 @@ const LANGUAGE_NAMES: Record<string, string> = {
 
 export async function POST(req: Request) {
   try {
-    const { message, menu, language = "es" } = await req.json();
+    const { message, history, menu, language = "es" } = await req.json();
+
+    if (typeof message !== "string" || !message.trim()) {
+      return NextResponse.json({ error: "Mensaje vacío." }, { status: 400 });
+    }
+    // Acotar la entrada: evita prompts enormes y abuso de cuota
+    const question = message.slice(0, 500);
+    const recentTurns: Array<{ role: string; text: string }> = Array.isArray(history)
+      ? history.slice(-8).filter((turn: any) => typeof turn?.text === "string")
+      : [];
+    const conversation = recentTurns
+      .map((turn) => `${turn.role === "user" ? "Comensal" : "SaborAI"}: ${turn.text.slice(0, 600)}`)
+      .join("\n");
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -45,7 +57,10 @@ REGLAS DE ORO:
 5. FORMATO: Da una respuesta conversacional breve y entusiasta (máximo 2 párrafos). Al final de tu respuesta, si recomendaste uno o más platos específicos, añade en una línea separada exactamente esto:
 [RECOMMENDED_IDS: id1, id2] donde id1, id2 sean los IDs de los platos del JSON.
 
-Pregunta del comensal: "${message}"`;
+${conversation ? `Conversación previa (úsala como contexto, p. ej. alergias o presupuesto ya mencionados):
+${conversation}
+
+` : ""}Pregunta del comensal: "${question}"`;
 
     const candidateModels = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
     let rawText = "¡Bienvenido a Santa Marta! Te recomiendo probar nuestro delicioso pescado fresco o un cayeye tradicional.";

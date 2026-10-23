@@ -2,25 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 15, 23, 42;
-  --background-start-rgb: 248, 250, 252;
-  --background-end-rgb: 241, 245, 249;
-}
-
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  @apply bg-paper font-sans text-ink;
   min-height: 100vh;
 }
 
 html {
   -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  @apply bg-achiote-soft text-ink;
 }
 
 @layer utilities {
@@ -29,5 +21,19 @@ html {
   }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+
+  /* Puntos guía entre el nombre del plato y el precio, como en una carta impresa */
+  .leader {
+    background-image: radial-gradient(circle, theme("colors.ink.mute") 0.8px, transparent 1.2px);
+    background-size: 6px 4px;
+    background-repeat: repeat-x;
+    background-position: left bottom 0.35em;
+  }
+
+  /* Textura de papel muy sutil */
+  .paper-grain {
+    background-image: radial-gradient(rgb(28 25 21 / 0.035) 1px, transparent 1px);
+    background-size: 3px 3px;
   }
 }

@@ -1,59 +1,27 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import Dropdown from "../components/Dropdown";
 import {
   ChatIcon,
   CloseIcon,
+  FileIcon,
+  LeafIcon,
   MicIcon,
   SendIcon,
   UploadIcon,
   UtensilsIcon
 } from "../components/icons";
-
-interface Dish {
-  id: string;
-  name: string;
-  description: string;
-  priceCOP: number;
-  allergens: string[];
-  isVegetarian: boolean;
-  localHighlight?: string;
-}
-
-interface MenuData {
-  restaurantName: string;
-  currency: string;
-  dishes: Dish[];
-}
-
-type LanguageCode = "es" | "en" | "fr" | "de" | "pt";
-
-const LANGUAGES: Array<{ code: LanguageCode; label: string; flag: string }> = [
-  { code: "es", label: "Español", flag: "🇪🇸" },
-  { code: "en", label: "English", flag: "🇺🇸" },
-  { code: "fr", label: "Français", flag: "🇫🇷" },
-  { code: "de", label: "Deutsch", flag: "🇩🇪" },
-  { code: "pt", label: "Português", flag: "🇧🇷" },
-];
-
-type CurrencyCode = "COP" | "USD" | "EUR";
-
-const CURRENCIES: Array<{ code: CurrencyCode; symbol: string }> = [
-  { code: "COP", symbol: "$" },
-  { code: "USD", symbol: "US$" },
-  { code: "EUR", symbol: "€" },
-];
-
-// Nombre de la moneda en el idioma activo ("Peso colombiano", "US Dollar"...)
-const currencyName = (code: CurrencyCode, lang: LanguageCode) => {
-  try {
-    const name = new Intl.DisplayNames([lang], { type: "currency" }).of(code) ?? code;
-    return name.charAt(0).toUpperCase() + name.slice(1);
-  } catch {
-    return code;
-  }
-};
+import { I18N, LANGUAGES, LOCALES, currencyName, type LanguageCode } from "../lib/i18n";
+import {
+  COP_PER_UNIT,
+  CURRENCIES,
+  DEFAULT_MENU,
+  MAX_UPLOAD_MB,
+  isMenuData,
+  type CurrencyCode,
+  type MenuData
+} from "../lib/menu";
 
 interface ChatMessage {
   sender: "user" | "ai";
@@ -61,230 +29,34 @@ interface ChatMessage {
   dishIds?: string[];
 }
 
-const I18N = {
-  es: {
-    tagline: "Build with AI • DevFest Santa Marta 2026",
-    touristTab: "Ver carta",
-    adminTab: "Subir carta",
-    language: "Idioma",
-    currency: "Moneda",
-    openChat: "Abrir chat con SaborAI",
-    closeChat: "Cerrar chat",
-    seeInMenu: "Ver en la carta",
-    voiceInput: "Dictar por voz",
-    liveMenu: "Carta en Vivo",
-    subtitle: "Bahía de Taganga, Santa Marta • Especialidad en Pesca del Día y Cayeye Criollo",
-    specialties: "Platos & Especialidades",
-    clearHighlight: "Limpiar resaltado",
-    allergens: "Alérgenos:",
-    veggie: "Veggie 🌱",
-    aiRecommended: "⭐ Recomendado por SaborAI",
-    conciergeTitle: "SaborAI Concierge",
-    conciergeSubtitle: "Habla en cualquier idioma",
-    welcomeMessage: "¡Hola! Bienvenido a Santa Marta 🌴 Soy tu conserje SaborAI. Pregúntame sobre platos típicos, alérgenos, precios o presupuesto en tu idioma.",
-    inputPlaceholder: "Pregunta en tu idioma (alergias, presupuesto, qué pedir)...",
-    send: "Enviar",
-    thinking: "SaborAI pensando...",
-    adminTitle: "Digitaliza la carta de tu restaurante en segundos",
-    adminSubtitle: "Sube un archivo PDF o una fotografía de tu menú físico o pizarra. Gemini Flash extraerá los platos, precios y alérgenos automáticamente.",
-    uploadPrompt: "Haz clic para subir un PDF o imagen del menú",
-    uploadFormats: "Formatos admitidos: PDF, JPG, PNG • Menús digitales, volantes o cartas físicas",
-    processButton: "✨ Digitalizar con Gemini Flash",
-    processing: "Gemini Flash analizando documento y alérgenos...",
-    success: "¡Menú digitalizado con éxito!",
-    chips: [
-      { label: "🦀 Sin mariscos (<$35k COP)", prompt: "Soy alérgico a los mariscos, mi presupuesto es de $35.000 COP, ¿qué me recomiendas?" },
-      { label: "🍌 ¿Qué es el Cayeye?", prompt: "¿Qué es el Cayeye tradicional y qué ingredientes lleva?" },
-      { label: "🌱 Opciones vegetarianas", prompt: "Soy vegetariano, ¿qué platos típicos puedo probar aquí?" }
-    ]
-  },
-  en: {
-    tagline: "Build with AI • DevFest Santa Marta 2026",
-    touristTab: "Menu",
-    adminTab: "Upload menu",
-    language: "Language",
-    currency: "Currency",
-    openChat: "Open SaborAI chat",
-    closeChat: "Close chat",
-    seeInMenu: "Show in menu",
-    voiceInput: "Voice input",
-    liveMenu: "Live Menu",
-    subtitle: "Taganga Bay, Santa Marta • Fresh Catch of the Day & Traditional Cayeye",
-    specialties: "Dishes & Specialties",
-    clearHighlight: "Clear highlight",
-    allergens: "Allergens:",
-    veggie: "Veggie 🌱",
-    aiRecommended: "⭐ Recommended by SaborAI",
-    conciergeTitle: "SaborAI Concierge",
-    conciergeSubtitle: "Speaks all languages fluently",
-    welcomeMessage: "Hello! Welcome to Santa Marta 🌴 I am your SaborAI concierge. Ask me about local dishes, allergies, budget or ingredients in your language!",
-    inputPlaceholder: "Ask anything (allergies, budget, what to order)...",
-    send: "Send",
-    thinking: "SaborAI is thinking...",
-    adminTitle: "Digitize your restaurant menu in seconds",
-    adminSubtitle: "Upload a PDF menu file or snap a picture of your physical chalkboard/menu. Gemini Flash extracts dishes, prices, and allergens automatically.",
-    uploadPrompt: "Click to upload a PDF or Menu Image",
-    uploadFormats: "Supported formats: PDF, JPG, PNG • Digital PDFs or physical photos",
-    processButton: "✨ Digitize with Gemini Flash",
-    processing: "Gemini Flash analyzing document & allergens...",
-    success: "Menu digitized successfully!",
-    chips: [
-      { label: "🦀 No shellfish (<$35k COP)", prompt: "I am allergic to shellfish, my budget is $35,000 COP, what do you recommend?" },
-      { label: "🍌 What is Cayeye?", prompt: "What is traditional Cayeye and what are its ingredients?" },
-      { label: "🌱 Vegetarian options", prompt: "I am vegetarian, what local dishes can I order here?" }
-    ]
-  },
-  fr: {
-    tagline: "Build with AI • DevFest Santa Marta 2026",
-    touristTab: "Menu",
-    adminTab: "Importer un menu",
-    language: "Langue",
-    currency: "Devise",
-    openChat: "Ouvrir le chat SaborAI",
-    closeChat: "Fermer le chat",
-    seeInMenu: "Voir dans le menu",
-    voiceInput: "Saisie vocale",
-    liveMenu: "Menu en Direct",
-    subtitle: "Baie de Taganga, Santa Marta • Poisson frais du jour et Cayeye traditionnel",
-    specialties: "Plats & Spécialités",
-    clearHighlight: "Effacer la sélection",
-    allergens: "Allergènes :",
-    veggie: "Végétarien 🌱",
-    aiRecommended: "⭐ Recommandé par SaborAI",
-    conciergeTitle: "SaborAI Concierge",
-    conciergeSubtitle: "Parle couramment votre langue",
-    welcomeMessage: "Bonjour ! Bienvenue à Santa Marta 🌴 Je suis votre concierge SaborAI. Posez-moi vos questions sur les plats, allergies, prix ou budget !",
-    inputPlaceholder: "Posez votre question (allergies, budget, conseils)...",
-    send: "Envoyer",
-    thinking: "SaborAI réfléchit...",
-    adminTitle: "Numérisez le menu de votre restaurant en quelques secondes",
-    adminSubtitle: "Téléversez un fichier PDF ou prenez une photo de votre menu papier. Gemini Flash extrait les plats, prix et allergènes automatiquement.",
-    uploadPrompt: "Cliquez pour téléverser un PDF ou une photo du menu",
-    uploadFormats: "Formats pris en charge : PDF, JPG, PNG",
-    processButton: "✨ Numériser avec Gemini Flash",
-    processing: "Gemini Flash analyse le document et les allergènes...",
-    success: "Menu numérisé avec succès !",
-    chips: [
-      { label: "🦀 Sans crustacés (<35k COP)", prompt: "Je suis allergique aux fruits de mer, mon budget est de 35 000 COP, que me conseillez-vous ?" },
-      { label: "🍌 Qu'est-ce que le Cayeye ?", prompt: "Qu'est-ce que le Cayeye traditionnel et de quoi est-il composé ?" },
-      { label: "🌱 Options végétariennes", prompt: "Je suis végétarien, quels plats traditionnels me recommandez-vous ?" }
-    ]
-  },
-  de: {
-    tagline: "Build with AI • DevFest Santa Marta 2026",
-    touristTab: "Speisekarte",
-    adminTab: "Karte hochladen",
-    language: "Sprache",
-    currency: "Währung",
-    openChat: "SaborAI-Chat öffnen",
-    closeChat: "Chat schließen",
-    seeInMenu: "In der Karte zeigen",
-    voiceInput: "Spracheingabe",
-    liveMenu: "Aktuelle Speisekarte",
-    subtitle: "Taganga-Bucht, Santa Marta • Fangfrischer Fisch & traditionelles Cayeye",
-    specialties: "Gerichte & Spezialitäten",
-    clearHighlight: "Hervorhebung löschen",
-    allergens: "Allergene:",
-    veggie: "Vegetarisch 🌱",
-    aiRecommended: "⭐ Von SaborAI empfohlen",
-    conciergeTitle: "SaborAI Concierge",
-    conciergeSubtitle: "Spricht Ihre Sprache",
-    welcomeMessage: "Hallo! Willkommen in Santa Marta 🌴 Ich bin Ihr SaborAI Concierge. Fragen Sie mich nach Gerichten, Allergenen oder Budget!",
-    inputPlaceholder: "Fragen Sie auf Deutsch (Allergien, Budget, Empfehlungen)...",
-    send: "Senden",
-    thinking: "SaborAI denkt nach...",
-    adminTitle: "Speisekarte in Sekundenschnelle digitalisieren",
-    adminSubtitle: "Laden Sie ein PDF hoch oder fotografieren Sie Ihre Speisekarte. Gemini Flash extrahiert Gerichte, Preise und Allergene automatisch.",
-    uploadPrompt: "Klicken Sie hier, um ein PDF oder Menü-Foto hochzuladen",
-    uploadFormats: "Unterstützte Formate: PDF, JPG, PNG",
-    processButton: "✨ Mit Gemini Flash digitalisieren",
-    processing: "Gemini Flash analysiert Dokument & Allergene...",
-    success: "Menü erfolgreich digitalisiert!",
-    chips: [
-      { label: "🦀 Keine Meeresfrüchte (<35k COP)", prompt: "Ich bin allergisch gegen Meeresfrüchte, mein Budget ist 35.000 COP, was empfehlen Sie?" },
-      { label: "🍌 Was ist Cayeye?", prompt: "Was ist traditionelles Cayeye und welche Zutaten enthält es?" },
-      { label: "🌱 Vegetarische Optionen", prompt: "Ich bin Vegetarier, welche typischen Gerichte gibt es hier für mich?" }
-    ]
-  },
-  pt: {
-    tagline: "Build with AI • DevFest Santa Marta 2026",
-    touristTab: "Cardápio",
-    adminTab: "Enviar cardápio",
-    language: "Idioma",
-    currency: "Moeda",
-    openChat: "Abrir chat com SaborAI",
-    closeChat: "Fechar chat",
-    seeInMenu: "Ver no cardápio",
-    voiceInput: "Entrada por voz",
-    liveMenu: "Cardápio ao Vivo",
-    subtitle: "Baía de Taganga, Santa Marta • Peixe fresco do dia e Cayeye tradicional",
-    specialties: "Pratos e Especialidades",
-    clearHighlight: "Limpar destaque",
-    allergens: "Alérgenos:",
-    veggie: "Vegetariano 🌱",
-    aiRecommended: "⭐ Recomendado por SaborAI",
-    conciergeTitle: "SaborAI Concierge",
-    conciergeSubtitle: "Fala em qualquer idioma",
-    welcomeMessage: "Olá! Bem-vindo a Santa Marta 🌴 Sou o seu concierge SaborAI. Pergunte-me sobre pratos locais, alergias, preços ou orçamento!",
-    inputPlaceholder: "Pergunte em português (alergias, orçamento, recomendações)...",
-    send: "Enviar",
-    thinking: "SaborAI pensando...",
-    adminTitle: "Digitalize o cardápio do seu restaurante em segundos",
-    adminSubtitle: "Envie um arquivo PDF ou foto do cardápio físico. Gemini Flash extrai pratos, preços e alérgenos automaticamente.",
-    uploadPrompt: "Clique para enviar um PDF ou imagem do cardápio",
-    uploadFormats: "Formatos suportados: PDF, JPG, PNG",
-    processButton: "✨ Digitalizar com Gemini Flash",
-    processing: "Gemini Flash analisando documento e alérgenos...",
-    success: "Cardápio digitalizado com sucesso!",
-    chips: [
-      { label: "🦀 Sem frutos do mar (<$35k COP)", prompt: "Sou alérgico a frutos do mar, meu orçamento é de 35.000 COP, o que recomenda?" },
-      { label: "🍌 O que é Cayeye?", prompt: "O que é o Cayeye tradicional e quais ingredientes leva?" },
-      { label: "🌱 Opções vegetarianas", prompt: "Sou vegetariano, quais opções típicas posso pedir aqui?" }
-    ]
+// Claves de localStorage: preferencias y la última carta digitalizada
+const STORAGE = {
+  lang: "menusamario:lang",
+  currency: "menusamario:currency",
+  menu: "menusamario:menu",
+};
+
+const readStorage = (key: string) => {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
   }
 };
 
-const DEFAULT_MENU: MenuData = {
-  restaurantName: "Restaurante Donde Chela - Bahía de Taganga",
-  currency: "COP",
-  dishes: [
-    {
-      id: "1",
-      name: "Pescado Frito Sierra Tradicional",
-      description: "Sierra fresca de la bahía frita al punto, con arroz de coco titoté, patacón crocante y ensalada samaria.",
-      priceCOP: 38000,
-      allergens: ["pescado"],
-      isVegetarian: false,
-      localHighlight: "Capturado en la madrugada por pescadores artesanales de Taganga."
-    },
-    {
-      id: "2",
-      name: "Cayeye Tradicional con Queso Costeño",
-      description: "Puré de guineo verde criollo machacado con mantequilla, coronado con queso costeño salado y hogao.",
-      priceCOP: 18000,
-      allergens: ["lácteos"],
-      isVegetarian: true,
-      localHighlight: "Plato insigne de Santa Marta y la zona bananera del Magdalena."
-    },
-    {
-      id: "3",
-      name: "Cazuela de Mariscos Samaria",
-      description: "Camarones, calamares y caracol en reducción cremosa de leche de coco fresca con toque de cilantro cimarrón.",
-      priceCOP: 45000,
-      allergens: ["mariscos", "moluscos", "lácteos"],
-      isVegetarian: false,
-      localHighlight: "Receta tradicional de la bahía con leche de coco recién extraída."
-    },
-    {
-      id: "4",
-      name: "Limonada de Coco Frappé",
-      description: "Bebida granizada con crema de coco natural y limón mandarino.",
-      priceCOP: 12000,
-      allergens: [],
-      isVegetarian: true,
-      localHighlight: "Bebida refrescante por excelencia para el calor caribeño."
-    }
-  ]
+const writeStorage = (key: string, value: string | null) => {
+  try {
+    if (value === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, value);
+  } catch {
+    // Modo privado o almacenamiento bloqueado: la app sigue funcionando sin persistir
+  }
+};
+
+// Separa "Restaurante X - Bahía de Taganga" en nombre y lugar
+const splitRestaurantName = (name: string) => {
+  const [title, ...rest] = name.split(/\s+[-–—]\s+/);
+  return { title, place: rest.join(" · ") };
 };
 
 export default function Home() {
@@ -295,6 +67,8 @@ export default function Home() {
   const [parseError, setParseError] = useState<string | null>(null);
   const [highlightedDishIds, setHighlightedDishIds] = useState<string[]>([]);
   const [currency, setCurrency] = useState<CurrencyCode>("COP");
+  const [avoidedAllergens, setAvoidedAllergens] = useState<string[]>([]);
+  const [vegOnly, setVegOnly] = useState(false);
 
   const t = I18N[lang];
 
@@ -325,8 +99,33 @@ export default function Home() {
     isPdf: boolean;
   } | null>(null);
   const [isParsing, setIsParsing] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [parseStatus, setParseStatus] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Recuperar preferencias y la carta digitalizada de la visita anterior
+  useEffect(() => {
+    const savedLang = readStorage(STORAGE.lang) as LanguageCode | null;
+    if (savedLang && savedLang in I18N && savedLang !== "es") {
+      setLang(savedLang);
+      setMessages([{ sender: "ai", text: I18N[savedLang].welcomeMessage }]);
+    }
+    const savedCurrency = readStorage(STORAGE.currency) as CurrencyCode | null;
+    if (savedCurrency && savedCurrency in COP_PER_UNIT) setCurrency(savedCurrency);
+    try {
+      const savedMenu = JSON.parse(readStorage(STORAGE.menu) ?? "null");
+      if (isMenuData(savedMenu)) {
+        setMenu(savedMenu);
+        setIsCustomMenu(true);
+      }
+    } catch {
+      writeStorage(STORAGE.menu, null);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
 
   // Con el chat abierto: marcar como leído y bajar al último mensaje
   useEffect(() => {
@@ -360,6 +159,35 @@ export default function Home() {
     };
   }, [isChatOpen]);
 
+  // Alérgenos presentes en la carta actual, para los filtros
+  const menuAllergens = useMemo(
+    () =>
+      Array.from(new Set(menu.dishes.flatMap((dish) => dish.allergens.map((a) => a.toLowerCase())))).sort(
+        (a, b) => a.localeCompare(b, "es")
+      ),
+    [menu]
+  );
+
+  const visibleDishes = menu.dishes.filter(
+    (dish) =>
+      (!vegOnly || dish.isVegetarian) &&
+      !dish.allergens.some((a) => avoidedAllergens.includes(a.toLowerCase()))
+  );
+  const hasFilters = vegOnly || avoidedAllergens.length > 0;
+
+  const priceFormatter = useMemo(
+    () =>
+      new Intl.NumberFormat(LOCALES[lang], {
+        style: "currency",
+        currency,
+        currencyDisplay: "narrowSymbol",
+        minimumFractionDigits: currency === "COP" ? 0 : 2,
+        maximumFractionDigits: currency === "COP" ? 0 : 2
+      }),
+    [lang, currency]
+  );
+  const formatPrice = (cop: number) => priceFormatter.format(cop / COP_PER_UNIT[currency]);
+
   const closeChat = () => {
     setIsChatOpen(false);
     chatBubbleRef.current?.focus({ preventScroll: true });
@@ -370,18 +198,9 @@ export default function Home() {
     setIsChatOpen(false);
   };
 
-  const formatPrice = (cop: number) => {
-    if (currency === "USD") {
-      return { amount: `$${(cop / 4000).toFixed(2)}`, code: "USD" };
-    }
-    if (currency === "EUR") {
-      return { amount: `€${(cop / 4300).toFixed(2)}`, code: "EUR" };
-    }
-    return { amount: `$${cop.toLocaleString("es-CO")}`, code: "COP" };
-  };
-
   const handleLanguageChange = (newLang: LanguageCode) => {
     setLang(newLang);
+    writeStorage(STORAGE.lang, newLang);
     const newT = I18N[newLang];
     // Si la conversación no ha empezado, reemplazar el saludo en vez de acumularlo
     setMessages((prev) =>
@@ -391,9 +210,35 @@ export default function Home() {
     );
   };
 
+  const handleCurrencyChange = (newCurrency: CurrencyCode) => {
+    setCurrency(newCurrency);
+    writeStorage(STORAGE.currency, newCurrency);
+  };
+
+  const toggleAllergen = (allergen: string) => {
+    setAvoidedAllergens((prev) =>
+      prev.includes(allergen) ? prev.filter((a) => a !== allergen) : [...prev, allergen]
+    );
+  };
+
+  const clearFilters = () => {
+    setAvoidedAllergens([]);
+    setVegOnly(false);
+  };
+
+  const restoreDemoMenu = () => {
+    setMenu(DEFAULT_MENU);
+    setIsCustomMenu(false);
+    setHighlightedDishIds([]);
+    clearFilters();
+    writeStorage(STORAGE.menu, null);
+  };
+
   // Resalta los platos recomendados y los lleva a la vista
   const showDishesInMenu = (dishIds: string[]) => {
     setHighlightedDishIds(dishIds);
+    // Un plato recomendado podría estar oculto por los filtros
+    clearFilters();
     if (window.matchMedia("(max-width: 639px)").matches) setIsChatOpen(false);
     requestAnimationFrame(() => {
       const target = dishIds
@@ -407,8 +252,9 @@ export default function Home() {
     const text = textToSend || inputMessage;
     if (!text.trim() || isChatLoading) return;
 
-    const newMessages = [...messages, { sender: "user" as const, text }];
-    setMessages(newMessages);
+    // El historial reciente da contexto a preguntas de seguimiento ("¿y sin lácteos?")
+    const history = messages.slice(1).slice(-8).map((m) => ({ role: m.sender, text: m.text }));
+    setMessages((prev) => [...prev, { sender: "user", text }]);
     setInputMessage("");
     setIsChatLoading(true);
 
@@ -416,25 +262,20 @@ export default function Home() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, menu, language: lang })
+        body: JSON.stringify({ message: text, history, menu, language: lang })
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
       const dishIds: string[] = (data.recommendedDishIds || []).filter((id: string) =>
         menu.dishes.some((dish) => dish.id === id)
       );
-      setMessages((prev) => [...prev, { sender: "ai", text: data.reply, dishIds }]);
+      setMessages((prev) => [...prev, { sender: "ai", text: data.reply || t.chatFallback, dishIds }]);
       if (dishIds.length > 0) {
         setHighlightedDishIds(dishIds);
       }
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          sender: "ai",
-          text: "¡Te recomiendo probar el Cayeye o la Sierra frita fresca!"
-        }
-      ]);
+    } catch {
+      setMessages((prev) => [...prev, { sender: "ai", text: t.chatFallback }]);
     } finally {
       setIsChatLoading(false);
     }
@@ -446,25 +287,12 @@ export default function Home() {
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          sender: "ai",
-          text: "El reconocimiento de voz no está soportado en este navegador o entorno. Puedes escribir tu consulta en el campo de texto."
-        }
-      ]);
+      setMessages((prev) => [...prev, { sender: "ai", text: t.voiceUnsupported }]);
       return;
     }
 
     const recognition = new SpeechRecognition();
-    const langMap: Record<LanguageCode, string> = {
-      es: "es-CO",
-      en: "en-US",
-      fr: "fr-FR",
-      de: "de-DE",
-      pt: "pt-BR"
-    };
-    recognition.lang = langMap[lang] || "es-CO";
+    recognition.lang = LOCALES[lang];
     recognition.interimResults = false;
 
     recognition.onstart = () => setIsRecording(true);
@@ -479,23 +307,49 @@ export default function Home() {
     recognition.start();
   };
 
-  // Manejo de carga de archivos (Imágenes y PDFs)
+  // Validación y lectura de archivos (imágenes y PDFs), desde el selector o arrastrando
+  const loadFile = (file: File) => {
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const isImage = file.type.startsWith("image/");
+    setParseStatus("");
+    setParseError(null);
+
+    if (!isPdf && !isImage) {
+      setParseError(t.unsupportedFile);
+      setParseStatus(t.unsupportedFile);
+      return;
+    }
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      setParseError(t.fileTooLarge(MAX_UPLOAD_MB));
+      setParseStatus(t.fileTooLarge(MAX_UPLOAD_MB));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setSelectedFile({
+        base64: reader.result as string,
+        mimeType: isPdf ? "application/pdf" : file.type || "image/jpeg",
+        name: file.name,
+        sizeKB: Math.round(file.size / 1024),
+        isPdf
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSelectedFile({
-          base64: reader.result as string,
-          mimeType: isPdf ? "application/pdf" : file.type || "image/jpeg",
-          name: file.name,
-          sizeKB: Math.round(file.size / 1024),
-          isPdf
-        });
-      };
-      reader.readAsDataURL(file);
-    }
+    if (file) loadFile(file);
+    // Permite volver a elegir el mismo archivo
+    e.target.value = "";
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) loadFile(file);
   };
 
   // Procesar archivo con Gemini Flash (Vision / PDF nativo)
@@ -517,28 +371,26 @@ export default function Home() {
       });
 
       const data = await res.json();
-      if (res.ok && data && data.dishes && data.dishes.length > 0) {
+      if (res.ok && isMenuData(data) && data.dishes.length > 0) {
         setMenu(data);
         setIsCustomMenu(true);
         setHighlightedDishIds([]);
-        setParseStatus(`¡Menú digitalizado con éxito! (${data.dishes.length} platos extraídos de "${data.restaurantName}")`);
+        clearFilters();
+        writeStorage(STORAGE.menu, JSON.stringify(data));
+        setParseStatus(t.successParsed(data.dishes.length, data.restaurantName));
         setMessages((prev) => [
           ...prev,
-          {
-            sender: "ai",
-            text: `🌴 ¡Carta digitalizada con éxito! Acabo de cargar ${data.dishes.length} platos de "${data.restaurantName}". Pregúntame sobre cualquier plato, ingredientes, precios o alérgenos en tu idioma.`
-          }
+          { sender: "ai", text: t.chatMenuLoaded(data.dishes.length, data.restaurantName) }
         ]);
         setTimeout(() => setActiveTab("turista"), 1400);
       } else {
-        const errText = data?.error || "No se pudieron extraer los platos del archivo. Asegúrate de que el menú sea legible.";
+        const errText = data?.error || t.parseFailed;
         setParseError(errText);
         setParseStatus(errText);
       }
-    } catch (err: any) {
-      const errText = "Error de red al procesar el menú. Por favor intenta de nuevo.";
-      setParseError(errText);
-      setParseStatus(errText);
+    } catch {
+      setParseError(t.networkError);
+      setParseStatus(t.networkError);
     } finally {
       setIsParsing(false);
     }
@@ -546,17 +398,17 @@ export default function Home() {
 
   // Selector de modo: en móvil y tablet va bajo el header, en escritorio dentro de él
   const renderModeSwitch = (className: string) => (
-    <div className={`grid grid-cols-2 rounded-full bg-slate-100 p-1 text-sm font-semibold ${className}`}>
+    <nav className={`flex gap-6 text-sm font-medium ${className}`}>
       {(["turista", "admin"] as const).map((tab) => (
         <button
           key={tab}
           type="button"
           aria-pressed={activeTab === tab}
           onClick={() => switchTab(tab)}
-          className={`flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+          className={`-mb-px flex items-center gap-2 border-b-2 py-3 transition focus:outline-none focus-visible:text-ink ${
             activeTab === tab
-              ? "bg-white text-teal-800 shadow-sm"
-              : "text-slate-500 hover:text-slate-800"
+              ? "border-achiote text-ink"
+              : "border-transparent text-ink-mute hover:text-ink"
           }`}
         >
           {tab === "turista" ? (
@@ -567,32 +419,29 @@ export default function Home() {
           <span>{tab === "turista" ? t.touristTab : t.adminTab}</span>
         </button>
       ))}
-    </div>
+    </nav>
   );
 
   const activeLanguage = LANGUAGES.find((item) => item.code === lang) ?? LANGUAGES[0];
+  const { title: restaurantTitle, place: restaurantPlace } = splitRestaurantName(menu.restaurantName);
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+    <div className="paper-grain min-h-screen bg-paper text-ink">
       {/* Navbar Superior */}
-      <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-2.5 sm:py-3">
-          {/* Logo */}
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500 to-teal-500 text-lg text-white shadow-sm sm:h-10 sm:w-10">
-              🌴
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="truncate font-display text-base font-bold leading-tight text-slate-900 sm:text-lg">
-                  MenúSamario AI
-                </h1>
-              </div>
-              <p className="hidden text-xs text-slate-500 sm:block">{t.tagline}</p>
-            </div>
+      <header className="sticky top-0 z-30 border-b border-ink-line bg-paper/90 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-3 px-4">
+          {/* Logotipo */}
+          <div className="flex min-w-0 items-baseline gap-3">
+            <h1 className="font-display text-[1.45rem] leading-none tracking-tight">
+              <span className="font-normal italic text-achiote">Menú</span>
+              <span className="font-semibold">Samario</span>
+            </h1>
+            <p className="hidden truncate border-l border-ink-line pl-3 text-xs text-ink-mute md:block">
+              {t.tagline}
+            </p>
           </div>
 
-          {renderModeSwitch("hidden lg:grid")}
+          {renderModeSwitch("hidden lg:flex self-stretch items-end")}
 
           {/* Selectores: Idioma y Moneda */}
           <div className="flex shrink-0 items-center gap-1.5">
@@ -607,252 +456,299 @@ export default function Home() {
               }))}
             >
               <span className="text-base leading-none">{activeLanguage.flag}</span>
-              <span className="hidden text-xs font-bold uppercase sm:inline">{activeLanguage.code}</span>
+              <span className="hidden text-xs font-semibold uppercase sm:inline">{activeLanguage.code}</span>
             </Dropdown>
 
             <Dropdown<CurrencyCode>
               label={t.currency}
               value={currency}
-              onChange={setCurrency}
+              onChange={handleCurrencyChange}
               options={CURRENCIES.map((item) => ({
                 value: item.code,
                 label: item.code,
                 hint: currencyName(item.code, lang),
                 icon: (
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-600">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full border border-ink-line text-[11px] font-semibold text-ink-soft">
                     {item.symbol}
                   </span>
                 )
               }))}
             >
-              <span className="text-xs font-bold">{currency}</span>
+              <span className="text-xs font-semibold">{currency}</span>
             </Dropdown>
           </div>
         </div>
+        {renderModeSwitch("mx-auto max-w-5xl px-4 lg:hidden")}
       </header>
 
       {/* Contenido Principal */}
-      <main className="mx-auto max-w-5xl px-4 pb-32 pt-4 sm:pt-6">
-        {renderModeSwitch("mb-4 lg:hidden")}
-
+      <main className="mx-auto max-w-5xl px-4 pb-36">
         {activeTab === "turista" ? (
-          <div className="space-y-5">
-            {/* Portada del restaurante */}
-            <section className="relative overflow-hidden rounded-3xl bg-teal-900 px-5 pb-12 pt-5 text-white sm:px-8 sm:pb-14 sm:pt-7">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-teal-100">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                {t.liveMenu}
-              </span>
-              <h2 className="mt-3 text-balance font-display text-3xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl">
-                {menu.restaurantName}
-              </h2>
-              <p className="mt-3 max-w-xl text-sm leading-relaxed text-teal-100/90 sm:text-base">
-                {t.subtitle}
+          <div key="turista" className="animate-fade-up motion-reduce:animate-none">
+            {/* Cabecera de la carta */}
+            <section className="border-b-2 border-ink pb-6 pt-8 sm:pb-8 sm:pt-14">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-achiote">
+                {isCustomMenu ? t.touristTab : t.location}
               </p>
-              {/* Mar y arena */}
-              <svg
-                viewBox="0 0 400 40"
-                preserveAspectRatio="none"
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-x-0 bottom-0 h-8 w-full sm:h-10"
-              >
-                <path d="M0 20 C50 8 100 8 150 20 S250 34 300 22 S370 10 400 16 V40 H0Z" fill="rgb(45 212 191 / 0.22)" />
-                <path d="M0 30 C60 20 120 22 180 30 S300 40 400 27 V40 H0Z" fill="#f2d29b" />
-              </svg>
+              <h2 className="mt-3 text-balance font-display text-[2.6rem] font-medium leading-[1.02] tracking-tight [font-variation-settings:'opsz'_144,'SOFT'_50] sm:text-6xl">
+                {restaurantTitle}
+                {restaurantPlace && (
+                  <span className="mt-1 block font-normal italic text-ink-soft">{restaurantPlace}</span>
+                )}
+              </h2>
+              {!isCustomMenu && (
+                <p className="mt-5 max-w-xl text-base leading-relaxed text-ink-soft sm:text-lg">{t.subtitle}</p>
+              )}
+              <p className="mt-6 flex flex-wrap gap-x-5 gap-y-1 text-xs font-medium uppercase tracking-[0.14em] text-ink-mute">
+                <span>{t.dishCount(menu.dishes.length)}</span>
+                <span aria-hidden="true">·</span>
+                <span>{t.pricesIn(currencyName(currency, lang))}</span>
+              </p>
             </section>
 
             {isCustomMenu && (
-              <div className="flex flex-col gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 sm:flex-row sm:items-center sm:justify-between">
-                <p>
-                  ✨ <strong>¡Carta digitalizada activa!</strong> {menu.dishes.length} platos cargados para{" "}
-                  <em>{menu.restaurantName}</em>.
-                </p>
+              <div className="mt-6 flex flex-col gap-2 border-l-2 border-olive bg-olive-soft/60 px-4 py-3 text-sm text-ink-soft sm:flex-row sm:items-center sm:justify-between">
+                <p>{t.customMenuActive(menu.dishes.length, menu.restaurantName)}</p>
                 <button
-                  onClick={() => {
-                    setMenu(DEFAULT_MENU);
-                    setIsCustomMenu(false);
-                    setHighlightedDishIds([]);
-                  }}
-                  className="shrink-0 self-start font-semibold text-teal-800 underline underline-offset-2 hover:text-teal-950 sm:self-auto"
+                  type="button"
+                  onClick={restoreDemoMenu}
+                  className="shrink-0 self-start font-semibold text-ink underline decoration-ink-line underline-offset-4 hover:decoration-ink sm:self-auto"
                 >
-                  Restaurar menú demo
+                  {t.restoreDemo}
                 </button>
               </div>
             )}
 
+            {/* Filtros por alérgeno y dieta */}
+            <div className="mt-6 flex flex-wrap items-center gap-2">
+              {menuAllergens.length > 0 && (
+                <>
+                  <span className="mr-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-mute">
+                    {t.avoid}
+                  </span>
+                  {menuAllergens.map((allergen) => {
+                    const active = avoidedAllergens.includes(allergen);
+                    return (
+                      <button
+                        key={allergen}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => toggleAllergen(allergen)}
+                        className={`rounded-full border px-3 py-1.5 text-[13px] capitalize transition focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+                          active
+                            ? "border-ink bg-ink text-paper line-through decoration-paper/60"
+                            : "border-ink-line text-ink-soft hover:border-ink-mute hover:text-ink"
+                        }`}
+                      >
+                        {allergen}
+                      </button>
+                    );
+                  })}
+                  <span aria-hidden="true" className="mx-1 hidden h-5 w-px bg-ink-line sm:block" />
+                </>
+              )}
+              <button
+                type="button"
+                aria-pressed={vegOnly}
+                onClick={() => setVegOnly((prev) => !prev)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+                  vegOnly
+                    ? "border-olive bg-olive text-paper"
+                    : "border-ink-line text-ink-soft hover:border-ink-mute hover:text-ink"
+                }`}
+              >
+                <LeafIcon className="h-3.5 w-3.5" />
+                {t.vegOnly}
+              </button>
+              {(hasFilters || highlightedDishIds.length > 0) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearFilters();
+                    setHighlightedDishIds([]);
+                  }}
+                  className="ml-auto text-[13px] font-medium text-achiote underline-offset-4 hover:underline"
+                >
+                  {hasFilters ? t.clearFilters : t.clearHighlight}
+                </button>
+              )}
+            </div>
+
             {/* Lista de Platos */}
-            <section className="space-y-3">
-              <div className="flex items-baseline justify-between gap-3">
-                <h3 className="font-display text-xl font-bold text-slate-900">
-                  {t.specialties}{" "}
-                  <span className="font-sans text-base font-medium text-slate-400">{menu.dishes.length}</span>
-                </h3>
-                {highlightedDishIds.length > 0 && (
-                  <button
-                    onClick={() => setHighlightedDishIds([])}
-                    className="shrink-0 text-sm font-semibold text-amber-700 hover:underline"
-                  >
-                    {t.clearHighlight}
-                  </button>
-                )}
-              </div>
-
-              <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
-                {menu.dishes.map((dish) => {
-                  const isHighlighted = highlightedDishIds.includes(dish.id);
-                  const price = formatPrice(dish.priceCOP);
-                  const hasAllergens = dish.allergens && dish.allergens.length > 0;
-                  return (
-                    <article
-                      key={dish.id}
-                      id={`dish-${dish.id}`}
-                      className={`scroll-mt-24 rounded-2xl border p-4 transition-colors duration-300 sm:p-5 ${
-                        isHighlighted
-                          ? "border-amber-300 bg-amber-50 ring-2 ring-amber-400/60"
-                          : "border-slate-200/80 bg-white"
-                      }`}
-                    >
-                      {isHighlighted && (
-                        <span className="mb-2.5 inline-flex rounded-full bg-amber-400 px-2.5 py-0.5 text-[11px] font-bold text-amber-950">
-                          {t.aiRecommended}
-                        </span>
-                      )}
-
-                      <div className="flex items-start justify-between gap-4">
-                        <h4 className="font-display text-lg font-bold leading-snug text-slate-900">
-                          {dish.name}
-                        </h4>
-                        <p className="shrink-0 pt-0.5 text-right leading-none">
-                          <span className="font-display text-lg font-extrabold text-teal-800">
-                            {price.amount}
-                          </span>
-                          <span className="mt-1 block text-[10px] font-semibold text-slate-400">
-                            {price.code}
-                          </span>
-                        </p>
-                      </div>
-
-                      <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{dish.description}</p>
-
-                      {dish.localHighlight && (
-                        <p className="mt-3 flex gap-2 rounded-xl bg-teal-50 px-3 py-2 text-[13px] leading-snug text-teal-800">
-                          <span aria-hidden="true">🌴</span>
-                          <span>{dish.localHighlight}</span>
-                        </p>
-                      )}
-
-                      {/* Vegetariano y alérgenos */}
-                      {(dish.isVegetarian || hasAllergens) && (
-                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                          {dish.isVegetarian && (
-                            <span className="rounded-full bg-green-100 px-2.5 py-1 text-[11px] font-semibold text-green-800">
-                              {t.veggie}
-                            </span>
+            <section aria-label={t.specialties} className="mt-4">
+              {visibleDishes.length === 0 ? (
+                <p className="border-y border-ink-line py-10 text-center font-display text-lg italic text-ink-mute">
+                  {t.noResults}
+                </p>
+              ) : (
+                <ul className="grid md:grid-cols-2 md:gap-x-12">
+                  {visibleDishes.map((dish) => {
+                    const isHighlighted = highlightedDishIds.includes(dish.id);
+                    return (
+                      <li key={dish.id} className="border-b border-ink-line">
+                        <article
+                          id={`dish-${dish.id}`}
+                          className={`-mx-3 my-2 scroll-mt-32 rounded-sm px-3 py-4 transition-colors duration-500 ${
+                            isHighlighted ? "bg-achiote-soft/60 shadow-[inset_3px_0_0_#B4432A]" : ""
+                          }`}
+                        >
+                          {isHighlighted && (
+                            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-achiote">
+                              {t.aiRecommended}
+                            </p>
                           )}
-                          {hasAllergens && (
-                            <span className="ml-0.5 text-[11px] font-semibold text-slate-500">{t.allergens}</span>
+
+                          <div className="flex items-baseline gap-2">
+                            <h3 className="font-display text-[1.25rem] font-medium leading-snug">{dish.name}</h3>
+                            <span aria-hidden="true" className="leader h-4 min-w-6 flex-1" />
+                            <p className="shrink-0 font-display text-[1.15rem] tabular-nums">
+                              {formatPrice(dish.priceCOP)}
+                            </p>
+                          </div>
+
+                          {dish.description && (
+                            <p className="mt-1.5 text-[0.95rem] leading-relaxed text-ink-soft">{dish.description}</p>
                           )}
-                          {dish.allergens.map((alg) => (
-                            <span
-                              key={alg}
-                              className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-700"
-                            >
-                              {alg}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                  );
-                })}
-              </div>
+
+                          {dish.localHighlight && (
+                            <p className="mt-2 font-display text-[0.95rem] italic leading-snug text-ink-mute">
+                              {dish.localHighlight}
+                            </p>
+                          )}
+
+                          {/* Vegetariano y alérgenos */}
+                          {(dish.isVegetarian || dish.allergens.length > 0) && (
+                            <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                              {dish.isVegetarian && (
+                                <span className="inline-flex items-center gap-1 font-semibold uppercase tracking-[0.12em] text-olive">
+                                  <LeafIcon className="h-3.5 w-3.5" />
+                                  {t.vegetarian}
+                                </span>
+                              )}
+                              {dish.allergens.length > 0 && (
+                                <span className="text-ink-mute">
+                                  {t.contains}:{" "}
+                                  <span className="font-medium text-ink-soft">{dish.allergens.join(", ")}</span>
+                                </span>
+                              )}
+                            </p>
+                          )}
+                        </article>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </section>
           </div>
         ) : (
           /* MODO RESTAURANTERO (CARGAR PDF O FOTO) */
-          <section className="mx-auto max-w-2xl space-y-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
-            <div className="space-y-2 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-50 text-teal-700">
-                <UploadIcon className="h-6 w-6" />
-              </div>
-              <h2 className="text-balance font-display text-2xl font-extrabold leading-tight text-slate-900 sm:text-3xl">
+          <section
+            key="admin"
+            className="grid animate-fade-up gap-10 pt-8 motion-reduce:animate-none sm:pt-14 lg:grid-cols-[1fr_1.1fr] lg:gap-14"
+          >
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-achiote">{t.adminEyebrow}</p>
+              <h2 className="mt-3 text-balance font-display text-4xl font-medium leading-[1.05] tracking-tight sm:text-5xl">
                 {t.adminTitle}
               </h2>
-              <p className="mx-auto max-w-lg text-sm leading-relaxed text-slate-500">{t.adminSubtitle}</p>
+              <p className="mt-4 max-w-md text-base leading-relaxed text-ink-soft">{t.adminSubtitle}</p>
+
+              <ol className="mt-8 border-t-2 border-ink">
+                {t.steps.map((step, idx) => (
+                  <li key={idx} className="flex gap-4 border-b border-ink-line py-4">
+                    <span className="w-8 shrink-0 font-display text-xl italic text-achiote">
+                      {String(idx + 1).padStart(2, "0")}
+                    </span>
+                    <span>
+                      <span className="block font-semibold">{step.title}</span>
+                      <span className="mt-0.5 block text-sm leading-relaxed text-ink-soft">{step.body}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
             </div>
 
-            {/* Zona de Subida de Archivo (PDF o Imagen) */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,application/pdf"
-              onChange={handleFileChange}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex min-h-[200px] w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-teal-300 bg-teal-50/50 p-5 text-center transition hover:border-teal-500 hover:bg-teal-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 sm:min-h-[220px] sm:p-6"
-            >
-              {selectedFile ? (
-                <span className="block space-y-3">
-                  {selectedFile.isPdf ? (
-                    <span className="mx-auto flex max-w-sm flex-col items-center rounded-xl border border-teal-200 bg-white p-4 shadow-sm">
-                      <span className="mb-2 text-5xl">📑</span>
-                      <span className="break-all text-center text-sm font-bold text-slate-800">
-                        {selectedFile.name}
-                      </span>
-                      <span className="mt-1 rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-semibold text-red-700">
-                        Documento PDF ({selectedFile.sizeKB} KB)
-                      </span>
-                    </span>
-                  ) : (
-                    <img
-                      src={selectedFile.base64}
-                      alt="Previsualización del menú"
-                      className="mx-auto max-h-56 rounded-lg border object-contain shadow-sm"
-                    />
-                  )}
-                  <span className="block text-xs font-medium text-teal-700">Clic para cambiar archivo</span>
-                </span>
-              ) : (
-                <span className="block space-y-2 text-slate-600">
-                  <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-teal-100 text-2xl text-teal-700">
-                    📁
-                  </span>
-                  <span className="block text-sm font-bold text-slate-800">{t.uploadPrompt}</span>
-                  <span className="block text-xs text-slate-500">{t.uploadFormats}</span>
-                </span>
-              )}
-            </button>
-
-            {/* Botón de Procesamiento con IA */}
-            <div className="space-y-3">
+            <div className="space-y-4">
+              {/* Zona de Subida de Archivo (PDF o Imagen) */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={handleFileChange}
+                className="hidden"
+              />
               <button
-                onClick={handleParseMenu}
-                disabled={!selectedFile || isParsing}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 py-3.5 text-base font-bold text-white shadow-md transition hover:from-teal-700 hover:to-emerald-700 disabled:opacity-50 sm:text-sm"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                className={`flex min-h-[300px] w-full flex-col items-center justify-center rounded-md border border-dashed p-6 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+                  isDragging
+                    ? "border-achiote bg-achiote-soft/50"
+                    : "border-ink-mute/60 bg-paper-card hover:border-ink"
+                }`}
               >
-                {isParsing ? (
-                  <>
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
-                    <span>{t.processing}</span>
-                  </>
+                {selectedFile ? (
+                  <span className="block space-y-4">
+                    {selectedFile.isPdf ? (
+                      <span className="mx-auto flex max-w-xs flex-col items-center gap-2">
+                        <FileIcon className="h-12 w-12 text-ink-soft" />
+                        <span className="break-all text-sm font-semibold">{selectedFile.name}</span>
+                        <span className="text-xs text-ink-mute">
+                          {t.pdfDocument} · {selectedFile.sizeKB} KB
+                        </span>
+                      </span>
+                    ) : (
+                      // Vista previa local en data URL: next/image no aporta nada aquí
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={selectedFile.base64}
+                        alt={selectedFile.name}
+                        className="mx-auto max-h-64 rounded-sm object-contain shadow-md shadow-ink/10"
+                      />
+                    )}
+                    <span className="block text-xs font-medium text-ink-mute underline underline-offset-4">
+                      {t.changeFile}
+                    </span>
+                  </span>
                 ) : (
-                  <span>{t.processButton}</span>
+                  <span className="block space-y-3">
+                    <UploadIcon className="mx-auto h-8 w-8 text-ink-mute" />
+                    <span className="block font-display text-lg">{t.uploadPrompt}</span>
+                    <span className="block text-xs text-ink-mute">{t.uploadFormats(MAX_UPLOAD_MB)}</span>
+                  </span>
                 )}
               </button>
 
+              {/* Botón de Procesamiento con IA */}
+              <button
+                type="button"
+                onClick={handleParseMenu}
+                disabled={!selectedFile || isParsing}
+                className="flex w-full items-center justify-center gap-2.5 rounded-md bg-ink px-4 py-3.5 text-base font-semibold text-paper transition hover:bg-ink-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-achiote focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:opacity-40 sm:text-sm"
+              >
+                {isParsing && (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-paper border-t-transparent" />
+                )}
+                <span>{isParsing ? t.processing : t.processButton}</span>
+              </button>
+
               {parseStatus && (
-                <div
-                  className={`rounded-xl border px-3 py-2.5 text-center text-sm font-semibold ${
+                <p
+                  role="status"
+                  className={`border-l-2 px-3 py-2 text-sm ${
                     parseError
-                      ? "border-rose-200 bg-rose-50 text-rose-800"
-                      : "border-teal-200 bg-teal-50 text-teal-800"
+                      ? "border-achiote bg-achiote-soft/50 text-achiote-dark"
+                      : "border-olive bg-olive-soft/60 text-ink-soft"
                   }`}
                 >
                   {parseStatus}
-                </div>
+                </p>
               )}
             </div>
           </section>
@@ -865,28 +761,25 @@ export default function Home() {
           <section
             role="dialog"
             aria-label={t.conciergeTitle}
-            className={`fixed inset-0 z-50 flex flex-col overflow-hidden bg-white transition-[opacity,transform,visibility] duration-300 ease-out motion-reduce:transition-none sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[min(640px,calc(100dvh-8rem))] sm:w-[400px] sm:origin-bottom-right sm:rounded-3xl sm:border sm:border-slate-200 sm:shadow-2xl sm:shadow-slate-900/20 ${
+            className={`fixed inset-0 z-50 flex flex-col overflow-hidden bg-paper-card transition-[opacity,transform,visibility] duration-300 ease-out motion-reduce:transition-none sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[min(640px,calc(100dvh-8rem))] sm:w-[400px] sm:origin-bottom-right sm:rounded-lg sm:border sm:border-ink-line sm:shadow-2xl sm:shadow-ink/20 ${
               isChatOpen
                 ? "visible translate-y-0 opacity-100 sm:scale-100"
                 : "pointer-events-none invisible translate-y-full opacity-0 sm:translate-y-4 sm:scale-95"
             }`}
           >
-            <header className="flex items-center gap-3 bg-teal-900 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-white">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-lg">
-                🤖
+            <header className="flex items-center gap-3 bg-ink px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-paper">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-achiote font-display text-lg italic">
+                S
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="font-display font-bold leading-tight">{t.conciergeTitle}</h3>
-                <p className="truncate text-xs text-teal-100/80">{t.conciergeSubtitle}</p>
+                <h2 className="font-display text-lg leading-tight">{t.conciergeTitle}</h2>
+                <p className="truncate text-xs text-paper/60">{t.conciergeSubtitle}</p>
               </div>
-              <span className="hidden rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-teal-100 sm:inline">
-                Gemini Flash
-              </span>
               <button
                 type="button"
                 onClick={closeChat}
                 aria-label={t.closeChat}
-                className="-mr-1.5 flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                className="-mr-1.5 flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-paper/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-paper"
               >
                 <CloseIcon className="h-5 w-5" />
               </button>
@@ -895,7 +788,8 @@ export default function Home() {
             {/* Mensajes del Chat */}
             <div
               ref={chatScrollRef}
-              className="flex-1 space-y-3 overflow-y-auto overscroll-contain bg-slate-50 px-4 py-4 text-sm leading-relaxed"
+              aria-live="polite"
+              className="flex-1 space-y-3 overflow-y-auto overscroll-contain bg-paper px-4 py-4 text-[0.95rem] leading-relaxed"
             >
               {messages.map((m, idx) => (
                 <div
@@ -905,8 +799,8 @@ export default function Home() {
                   <div
                     className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 ${
                       m.sender === "user"
-                        ? "rounded-br-md bg-teal-700 text-white"
-                        : "rounded-bl-md border border-slate-200/80 bg-white text-slate-800 shadow-sm"
+                        ? "rounded-br-sm bg-ink text-paper"
+                        : "rounded-bl-sm border border-ink-line bg-paper-card text-ink"
                     }`}
                   >
                     <p className="whitespace-pre-line">{m.text}</p>
@@ -914,9 +808,9 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={() => showDishesInMenu(m.dishIds!)}
-                        className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-200"
+                        className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-achiote underline decoration-achiote/30 underline-offset-4 transition hover:decoration-achiote"
                       >
-                        ⭐ {t.seeInMenu} ({m.dishIds.length})
+                        {t.seeInMenu} ({m.dishIds.length}) →
                       </button>
                     )}
                   </div>
@@ -924,10 +818,10 @@ export default function Home() {
               ))}
               {isChatLoading && (
                 <div className="flex justify-start">
-                  <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-md border border-slate-200/80 bg-white px-3.5 py-2.5 text-xs text-slate-500 shadow-sm">
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500"></span>
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500 [animation-delay:0.2s]"></span>
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500 [animation-delay:0.4s]"></span>
+                  <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-sm border border-ink-line bg-paper-card px-3.5 py-2.5 text-xs text-ink-mute">
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-achiote"></span>
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-achiote [animation-delay:0.2s]"></span>
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-achiote [animation-delay:0.4s]"></span>
                     <span className="ml-1">{t.thinking}</span>
                   </div>
                 </div>
@@ -935,7 +829,7 @@ export default function Home() {
             </div>
 
             {/* Preguntas rápidas + caja de entrada con micrófono */}
-            <div className="border-t border-slate-200 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5">
+            <div className="border-t border-ink-line bg-paper-card pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5">
               <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 pb-2.5">
                 {t.chips.map((chip, idx) => (
                   <button
@@ -943,7 +837,7 @@ export default function Home() {
                     type="button"
                     onClick={() => handleSendMessage(chip.prompt)}
                     disabled={isChatLoading}
-                    className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-teal-500 hover:text-teal-800 disabled:opacity-50"
+                    className="shrink-0 rounded-full border border-ink-line px-3 py-1.5 text-xs text-ink-soft transition hover:border-ink hover:text-ink disabled:opacity-50"
                   >
                     {chip.label}
                   </button>
@@ -955,16 +849,17 @@ export default function Home() {
                   e.preventDefault();
                   handleSendMessage();
                 }}
-                className="mx-4 flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 p-1 transition focus-within:border-teal-500 focus-within:bg-white focus-within:ring-2 focus-within:ring-teal-500/20"
+                className="mx-4 flex items-center gap-1 rounded-full border border-ink-line bg-paper p-1 transition focus-within:border-ink"
               >
                 <button
                   type="button"
                   onClick={handleVoiceInput}
                   aria-label={t.voiceInput}
+                  aria-pressed={isRecording}
                   className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition ${
                     isRecording
-                      ? "animate-pulse bg-rose-500 text-white"
-                      : "text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                      ? "animate-pulse bg-achiote text-paper"
+                      : "text-ink-mute hover:bg-paper-deep hover:text-ink"
                   }`}
                 >
                   <MicIcon className="h-5 w-5" />
@@ -976,13 +871,14 @@ export default function Home() {
                   onChange={(e) => setInputMessage(e.target.value)}
                   placeholder={t.inputPlaceholder}
                   enterKeyHint="send"
-                  className="min-w-0 flex-1 text-ellipsis bg-transparent px-1 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none sm:text-sm"
+                  maxLength={500}
+                  className="min-w-0 flex-1 text-ellipsis bg-transparent px-1 text-base text-ink placeholder:text-ink-mute focus:outline-none sm:text-sm"
                 />
                 <button
                   type="submit"
                   aria-label={t.send}
                   disabled={isChatLoading || !inputMessage.trim()}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-700 text-white transition hover:bg-teal-800 disabled:bg-slate-300"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-achiote text-paper transition hover:bg-achiote-dark disabled:bg-ink-line disabled:text-paper"
                 >
                   <SendIcon className="h-5 w-5" />
                 </button>
@@ -997,13 +893,14 @@ export default function Home() {
             onClick={() => (isChatOpen ? closeChat() : setIsChatOpen(true))}
             aria-label={isChatOpen ? t.closeChat : t.openChat}
             aria-expanded={isChatOpen}
-            className={`fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-teal-700 text-white shadow-lg shadow-teal-900/30 transition hover:bg-teal-800 focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-500/40 active:scale-95 sm:right-6 ${
-              isChatOpen ? "max-sm:hidden" : ""
+            className={`fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-4 z-50 flex h-14 items-center justify-center gap-2 rounded-full bg-ink text-paper shadow-lg shadow-ink/25 transition hover:bg-ink-soft focus:outline-none focus-visible:ring-4 focus-visible:ring-achiote/40 active:scale-95 sm:right-6 ${
+              isChatOpen ? "w-14 max-sm:hidden" : "w-14 sm:w-auto sm:pl-5 sm:pr-6"
             }`}
           >
-            {isChatOpen ? <CloseIcon className="h-6 w-6" /> : <ChatIcon className="h-6 w-6" />}
+            {isChatOpen ? <CloseIcon className="h-6 w-6" /> : <ChatIcon className="h-5 w-5" />}
+            {!isChatOpen && <span className="hidden text-sm font-semibold sm:inline">{t.openChat}</span>}
             {!isChatOpen && unreadCount > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-400 px-1 text-[11px] font-bold text-amber-950 ring-2 ring-slate-50">
+              <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-achiote px-1 text-[11px] font-bold text-paper ring-2 ring-paper">
                 {unreadCount}
               </span>
             )}
