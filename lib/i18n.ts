@@ -1,31 +1,52 @@
-export type LanguageCode = "es" | "en" | "fr" | "de" | "pt";
+// Idioma: cualquier etiqueta BCP 47 ("es", "ja", "pt-BR"...). Cinco idiomas traen
+// textos escritos a mano; el resto se traduce con Gemini y se guarda en caché.
+export type LanguageCode = string;
 
-export const LANGUAGES: Array<{ code: LanguageCode; label: string; flag: string }> = [
-  { code: "es", label: "Español", flag: "🇪🇸" },
-  { code: "en", label: "English", flag: "🇺🇸" },
-  { code: "fr", label: "Français", flag: "🇫🇷" },
-  { code: "de", label: "Deutsch", flag: "🇩🇪" },
-  { code: "pt", label: "Português", flag: "🇧🇷" },
+export const HANDWRITTEN_LANGUAGES = ["es", "en", "fr", "de", "pt"] as const;
+
+// Idiomas ofrecidos en el selector (ISO 639-1, los que Gemini maneja con soltura)
+export const LANGUAGE_CODES: LanguageCode[] = [
+  "es", "en", "fr", "de", "pt", "it", "nl", "ca", "gl", "eu", "ru", "uk", "pl", "cs",
+  "sk", "sl", "hr", "sr", "bs", "bg", "mk", "ro", "hu", "el", "tr", "sv", "no", "da",
+  "fi", "is", "et", "lv", "lt", "ga", "cy", "mt", "sq", "hy", "ka", "az", "kk", "uz",
+  "ky", "tg", "tk", "mn", "ar", "he", "fa", "ur", "ps", "ku", "hi", "bn", "pa", "gu",
+  "mr", "ta", "te", "kn", "ml", "si", "ne", "or", "as", "zh", "ja", "ko", "vi", "th",
+  "lo", "km", "my", "id", "ms", "tl", "jv", "su", "sw", "am", "ti", "so", "ha", "yo",
+  "ig", "zu", "xh", "af", "st", "sn", "rw", "mg", "ny", "ht", "qu", "gn", "ay", "eo",
+  "la", "lb", "fy", "gd", "be", "mi", "sm", "haw", "yi", "ceb", "hmn"
 ];
 
-// Locale para Intl (precios) y Web Speech API (dictado)
-export const LOCALES: Record<LanguageCode, string> = {
-  es: "es-CO",
-  en: "en-US",
-  fr: "fr-FR",
-  de: "de-DE",
-  pt: "pt-BR",
+// Idiomas que se escriben de derecha a izquierda
+const RTL_LANGUAGES = ["ar", "he", "fa", "ur", "ps", "ku", "yi"];
+
+export const isRtl = (lang: LanguageCode) => RTL_LANGUAGES.includes(lang.split("-")[0]);
+
+export const isLanguageCode = (value: unknown): value is LanguageCode =>
+  typeof value === "string" && /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(value);
+
+// Nombre de un idioma: en sí mismo ("日本語") o visto desde otro ("japonés")
+export const languageName = (code: LanguageCode, inLanguage: LanguageCode = code) => {
+  try {
+    const name = new Intl.DisplayNames([inLanguage, "en"], { type: "language" }).of(code) ?? code;
+    return name.charAt(0).toLocaleUpperCase(inLanguage) + name.slice(1);
+  } catch {
+    return code;
+  }
 };
 
 // Nombre de la moneda en el idioma activo ("Peso colombiano", "US Dollar"...)
 export const currencyName = (code: string, lang: LanguageCode) => {
   try {
-    const name = new Intl.DisplayNames([lang], { type: "currency" }).of(code) ?? code;
-    return name.charAt(0).toUpperCase() + name.slice(1);
+    const name = new Intl.DisplayNames([lang, "en"], { type: "currency" }).of(code) ?? code;
+    return name.charAt(0).toLocaleUpperCase(lang) + name.slice(1);
   } catch {
     return code;
   }
 };
+
+// Rellena los marcadores {n}, {name}... de un texto traducido
+export const fmt = (template: string, vars: Record<string, string | number>) =>
+  template.replace(/\{(\w+)\}/g, (match, key) => (key in vars ? String(vars[key]) : match));
 
 const es = {
   tagline: "Cartas digitales del Caribe",
@@ -33,14 +54,19 @@ const es = {
   adminTab: "Subir carta",
   language: "Idioma",
   currency: "Moneda",
+  search: "Buscar…",
+  noMatches: "Sin resultados",
+  translating: "Traduciendo…",
   openChat: "Pregúntale a SaborAI",
   closeChat: "Cerrar chat",
   seeInMenu: "Ver en la carta",
   voiceInput: "Dictar por voz",
   location: "Taganga · Santa Marta",
   subtitle: "Pesca del día y cayeye criollo, servidos frente a la bahía.",
-  dishCount: (n: number) => `${n} ${n === 1 ? "plato" : "platos"}`,
-  pricesIn: (c: string) => `Precios en ${c}`,
+  dishCountOne: "{n} plato",
+  dishCountOther: "{n} platos",
+  pricesIn: "Precios en {currency}",
+  ratesSource: "Tasas de ExchangeRate-API",
   specialties: "La carta",
   clearHighlight: "Quitar resaltado",
   avoid: "Evitar",
@@ -50,7 +76,7 @@ const es = {
   contains: "Contiene",
   vegetarian: "Vegetariano",
   aiRecommended: "Recomendado por SaborAI",
-  customMenuActive: (n: number, name: string) => `Carta digitalizada: ${n} platos de ${name}.`,
+  customMenuActive: "Carta digitalizada: {n} platos de {name}.",
   restoreDemo: "Volver a la carta de ejemplo",
   conciergeTitle: "SaborAI",
   conciergeSubtitle: "Tu conserje gastronómico, en tu idioma",
@@ -69,16 +95,16 @@ const es = {
     { title: "Lista para turistas", body: "La carta queda traducible y el concierge la conoce de inmediato." },
   ],
   uploadPrompt: "Arrastra el archivo aquí o haz clic para elegirlo",
-  uploadFormats: (mb: number) => `PDF, JPG o PNG · hasta ${mb} MB`,
+  uploadFormats: "PDF, JPG o PNG · hasta {mb} MB",
   pdfDocument: "Documento PDF",
   changeFile: "Cambiar archivo",
   processButton: "Digitalizar carta",
   processing: "Leyendo la carta y sus alérgenos…",
-  successParsed: (n: number, name: string) => `Listo: ${n} platos extraídos de “${name}”.`,
-  chatMenuLoaded: (n: number, name: string) => `Acabo de cargar la carta de “${name}” con ${n} platos. Pregúntame lo que quieras sobre ella.`,
+  successParsed: "Listo: {n} platos extraídos de “{name}”.",
+  chatMenuLoaded: "Acabo de cargar la carta de “{name}” con {n} platos. Pregúntame lo que quieras sobre ella.",
   parseFailed: "No se pudieron extraer platos del archivo. Prueba con una imagen más nítida.",
   networkError: "Error de red al procesar la carta. Intenta de nuevo.",
-  fileTooLarge: (mb: number) => `El archivo supera los ${mb} MB.`,
+  fileTooLarge: "El archivo supera los {mb} MB.",
   unsupportedFile: "Formato no admitido. Usa PDF, JPG o PNG.",
   chips: [
     { label: "Sin mariscos, menos de $35.000", prompt: "Soy alérgico a los mariscos, mi presupuesto es de $35.000 COP, ¿qué me recomiendas?" },
@@ -95,14 +121,19 @@ const en: Dictionary = {
   adminTab: "Upload menu",
   language: "Language",
   currency: "Currency",
+  search: "Search…",
+  noMatches: "No matches",
+  translating: "Translating…",
   openChat: "Ask SaborAI",
   closeChat: "Close chat",
   seeInMenu: "Show in menu",
   voiceInput: "Voice input",
   location: "Taganga · Santa Marta",
   subtitle: "Catch of the day and traditional cayeye, served on the bay.",
-  dishCount: (n) => `${n} ${n === 1 ? "dish" : "dishes"}`,
-  pricesIn: (c) => `Prices in ${c}`,
+  dishCountOne: "{n} dish",
+  dishCountOther: "{n} dishes",
+  pricesIn: "Prices in {currency}",
+  ratesSource: "Rates by ExchangeRate-API",
   specialties: "The menu",
   clearHighlight: "Clear highlight",
   avoid: "Avoid",
@@ -112,7 +143,7 @@ const en: Dictionary = {
   contains: "Contains",
   vegetarian: "Vegetarian",
   aiRecommended: "Recommended by SaborAI",
-  customMenuActive: (n, name) => `Digitized menu: ${n} dishes from ${name}.`,
+  customMenuActive: "Digitized menu: {n} dishes from {name}.",
   restoreDemo: "Back to the sample menu",
   conciergeTitle: "SaborAI",
   conciergeSubtitle: "Your food concierge, in your language",
@@ -131,16 +162,16 @@ const en: Dictionary = {
     { title: "Ready for travelers", body: "The menu becomes translatable and the concierge knows it instantly." },
   ],
   uploadPrompt: "Drop the file here or click to choose it",
-  uploadFormats: (mb) => `PDF, JPG or PNG · up to ${mb} MB`,
+  uploadFormats: "PDF, JPG or PNG · up to {mb} MB",
   pdfDocument: "PDF document",
   changeFile: "Change file",
   processButton: "Digitize menu",
   processing: "Reading the menu and its allergens…",
-  successParsed: (n, name) => `Done: ${n} dishes extracted from “${name}”.`,
-  chatMenuLoaded: (n, name) => `I just loaded the menu of “${name}” with ${n} dishes. Ask me anything about it.`,
+  successParsed: "Done: {n} dishes extracted from “{name}”.",
+  chatMenuLoaded: "I just loaded the menu of “{name}” with {n} dishes. Ask me anything about it.",
   parseFailed: "Couldn't extract dishes from the file. Try a sharper image.",
   networkError: "Network error while processing the menu. Please try again.",
-  fileTooLarge: (mb) => `The file is larger than ${mb} MB.`,
+  fileTooLarge: "The file is larger than {mb} MB.",
   unsupportedFile: "Unsupported format. Use PDF, JPG or PNG.",
   chips: [
     { label: "No shellfish, under $35,000", prompt: "I am allergic to shellfish, my budget is $35,000 COP, what do you recommend?" },
@@ -155,14 +186,19 @@ const fr: Dictionary = {
   adminTab: "Importer un menu",
   language: "Langue",
   currency: "Devise",
+  search: "Rechercher…",
+  noMatches: "Aucun résultat",
+  translating: "Traduction…",
   openChat: "Demander à SaborAI",
   closeChat: "Fermer le chat",
   seeInMenu: "Voir dans le menu",
   voiceInput: "Saisie vocale",
   location: "Taganga · Santa Marta",
   subtitle: "Pêche du jour et cayeye traditionnel, servis face à la baie.",
-  dishCount: (n) => `${n} ${n === 1 ? "plat" : "plats"}`,
-  pricesIn: (c) => `Prix en ${c}`,
+  dishCountOne: "{n} plat",
+  dishCountOther: "{n} plats",
+  pricesIn: "Prix en {currency}",
+  ratesSource: "Taux : ExchangeRate-API",
   specialties: "La carte",
   clearHighlight: "Effacer la sélection",
   avoid: "Éviter",
@@ -172,7 +208,7 @@ const fr: Dictionary = {
   contains: "Contient",
   vegetarian: "Végétarien",
   aiRecommended: "Recommandé par SaborAI",
-  customMenuActive: (n, name) => `Menu numérisé : ${n} plats de ${name}.`,
+  customMenuActive: "Menu numérisé : {n} plats de {name}.",
   restoreDemo: "Revenir au menu d'exemple",
   conciergeTitle: "SaborAI",
   conciergeSubtitle: "Votre concierge gastronomique, dans votre langue",
@@ -191,16 +227,16 @@ const fr: Dictionary = {
     { title: "Prêt pour les voyageurs", body: "Le menu devient traduisible et le concierge le connaît aussitôt." },
   ],
   uploadPrompt: "Déposez le fichier ici ou cliquez pour le choisir",
-  uploadFormats: (mb) => `PDF, JPG ou PNG · jusqu'à ${mb} Mo`,
+  uploadFormats: "PDF, JPG ou PNG · jusqu'à {mb} Mo",
   pdfDocument: "Document PDF",
   changeFile: "Changer de fichier",
   processButton: "Numériser le menu",
   processing: "Lecture du menu et des allergènes…",
-  successParsed: (n, name) => `Terminé : ${n} plats extraits de « ${name} ».`,
-  chatMenuLoaded: (n, name) => `Je viens de charger le menu de « ${name} » avec ${n} plats. Posez-moi vos questions.`,
+  successParsed: "Terminé : {n} plats extraits de « {name} ».",
+  chatMenuLoaded: "Je viens de charger le menu de « {name} » avec {n} plats. Posez-moi vos questions.",
   parseFailed: "Impossible d'extraire les plats. Essayez une image plus nette.",
   networkError: "Erreur réseau pendant le traitement. Réessayez.",
-  fileTooLarge: (mb) => `Le fichier dépasse ${mb} Mo.`,
+  fileTooLarge: "Le fichier dépasse {mb} Mo.",
   unsupportedFile: "Format non pris en charge. Utilisez PDF, JPG ou PNG.",
   chips: [
     { label: "Sans crustacés, moins de 35 000 COP", prompt: "Je suis allergique aux fruits de mer, mon budget est de 35 000 COP, que me conseillez-vous ?" },
@@ -215,14 +251,19 @@ const de: Dictionary = {
   adminTab: "Karte hochladen",
   language: "Sprache",
   currency: "Währung",
+  search: "Suchen…",
+  noMatches: "Keine Treffer",
+  translating: "Wird übersetzt…",
   openChat: "SaborAI fragen",
   closeChat: "Chat schließen",
   seeInMenu: "In der Karte zeigen",
   voiceInput: "Spracheingabe",
   location: "Taganga · Santa Marta",
   subtitle: "Fang des Tages und traditionelles Cayeye, direkt an der Bucht.",
-  dishCount: (n) => `${n} ${n === 1 ? "Gericht" : "Gerichte"}`,
-  pricesIn: (c) => `Preise in ${c}`,
+  dishCountOne: "{n} Gericht",
+  dishCountOther: "{n} Gerichte",
+  pricesIn: "Preise in {currency}",
+  ratesSource: "Kurse: ExchangeRate-API",
   specialties: "Die Karte",
   clearHighlight: "Hervorhebung löschen",
   avoid: "Ohne",
@@ -232,7 +273,7 @@ const de: Dictionary = {
   contains: "Enthält",
   vegetarian: "Vegetarisch",
   aiRecommended: "Von SaborAI empfohlen",
-  customMenuActive: (n, name) => `Digitalisierte Karte: ${n} Gerichte von ${name}.`,
+  customMenuActive: "Digitalisierte Karte: {n} Gerichte von {name}.",
   restoreDemo: "Zurück zur Beispielkarte",
   conciergeTitle: "SaborAI",
   conciergeSubtitle: "Ihr kulinarischer Concierge, in Ihrer Sprache",
@@ -251,16 +292,16 @@ const de: Dictionary = {
     { title: "Bereit für Reisende", body: "Die Karte ist übersetzbar und der Concierge kennt sie sofort." },
   ],
   uploadPrompt: "Datei hier ablegen oder klicken, um sie zu wählen",
-  uploadFormats: (mb) => `PDF, JPG oder PNG · bis ${mb} MB`,
+  uploadFormats: "PDF, JPG oder PNG · bis {mb} MB",
   pdfDocument: "PDF-Dokument",
   changeFile: "Datei ändern",
   processButton: "Karte digitalisieren",
   processing: "Karte und Allergene werden gelesen…",
-  successParsed: (n, name) => `Fertig: ${n} Gerichte aus „${name}“ erkannt.`,
-  chatMenuLoaded: (n, name) => `Ich habe die Karte von „${name}“ mit ${n} Gerichten geladen. Fragen Sie mich alles dazu.`,
+  successParsed: "Fertig: {n} Gerichte aus „{name}“ erkannt.",
+  chatMenuLoaded: "Ich habe die Karte von „{name}“ mit {n} Gerichten geladen. Fragen Sie mich alles dazu.",
   parseFailed: "Keine Gerichte erkannt. Versuchen Sie ein schärferes Bild.",
   networkError: "Netzwerkfehler bei der Verarbeitung. Bitte erneut versuchen.",
-  fileTooLarge: (mb) => `Die Datei ist größer als ${mb} MB.`,
+  fileTooLarge: "Die Datei ist größer als {mb} MB.",
   unsupportedFile: "Format nicht unterstützt. Verwenden Sie PDF, JPG oder PNG.",
   chips: [
     { label: "Ohne Meeresfrüchte, unter 35.000 COP", prompt: "Ich bin allergisch gegen Meeresfrüchte, mein Budget ist 35.000 COP, was empfehlen Sie?" },
@@ -275,14 +316,19 @@ const pt: Dictionary = {
   adminTab: "Enviar cardápio",
   language: "Idioma",
   currency: "Moeda",
+  search: "Buscar…",
+  noMatches: "Nenhum resultado",
+  translating: "Traduzindo…",
   openChat: "Pergunte ao SaborAI",
   closeChat: "Fechar chat",
   seeInMenu: "Ver no cardápio",
   voiceInput: "Entrada por voz",
   location: "Taganga · Santa Marta",
   subtitle: "Peixe do dia e cayeye tradicional, servidos de frente para a baía.",
-  dishCount: (n) => `${n} ${n === 1 ? "prato" : "pratos"}`,
-  pricesIn: (c) => `Preços em ${c}`,
+  dishCountOne: "{n} prato",
+  dishCountOther: "{n} pratos",
+  pricesIn: "Preços em {currency}",
+  ratesSource: "Taxas: ExchangeRate-API",
   specialties: "O cardápio",
   clearHighlight: "Limpar destaque",
   avoid: "Evitar",
@@ -292,7 +338,7 @@ const pt: Dictionary = {
   contains: "Contém",
   vegetarian: "Vegetariano",
   aiRecommended: "Recomendado pelo SaborAI",
-  customMenuActive: (n, name) => `Cardápio digitalizado: ${n} pratos de ${name}.`,
+  customMenuActive: "Cardápio digitalizado: {n} pratos de {name}.",
   restoreDemo: "Voltar ao cardápio de exemplo",
   conciergeTitle: "SaborAI",
   conciergeSubtitle: "Seu concierge gastronômico, no seu idioma",
@@ -311,16 +357,16 @@ const pt: Dictionary = {
     { title: "Pronto para turistas", body: "O cardápio fica traduzível e o concierge o conhece na hora." },
   ],
   uploadPrompt: "Arraste o arquivo aqui ou clique para escolher",
-  uploadFormats: (mb) => `PDF, JPG ou PNG · até ${mb} MB`,
+  uploadFormats: "PDF, JPG ou PNG · até {mb} MB",
   pdfDocument: "Documento PDF",
   changeFile: "Trocar arquivo",
   processButton: "Digitalizar cardápio",
   processing: "Lendo o cardápio e os alérgenos…",
-  successParsed: (n, name) => `Pronto: ${n} pratos extraídos de “${name}”.`,
-  chatMenuLoaded: (n, name) => `Acabei de carregar o cardápio de “${name}” com ${n} pratos. Pergunte o que quiser.`,
+  successParsed: "Pronto: {n} pratos extraídos de “{name}”.",
+  chatMenuLoaded: "Acabei de carregar o cardápio de “{name}” com {n} pratos. Pergunte o que quiser.",
   parseFailed: "Não foi possível extrair pratos. Tente uma imagem mais nítida.",
   networkError: "Erro de rede ao processar o cardápio. Tente novamente.",
-  fileTooLarge: (mb) => `O arquivo passa de ${mb} MB.`,
+  fileTooLarge: "O arquivo passa de {mb} MB.",
   unsupportedFile: "Formato não suportado. Use PDF, JPG ou PNG.",
   chips: [
     { label: "Sem frutos do mar, até 35.000 COP", prompt: "Sou alérgico a frutos do mar, meu orçamento é de 35.000 COP, o que recomenda?" },
@@ -329,4 +375,31 @@ const pt: Dictionary = {
   ]
 };
 
-export const I18N: Record<LanguageCode, Dictionary> = { es, en, fr, de, pt };
+export const I18N: Record<string, Dictionary> = { es, en, fr, de, pt };
+
+// Aplana el diccionario a pares "ruta → texto" para traducirlo en un solo envío
+export const flattenDictionary = (dict: Dictionary): Record<string, string> => {
+  const out: Record<string, string> = {};
+  const walk = (value: unknown, path: string) => {
+    if (typeof value === "string") out[path] = value;
+    else if (Array.isArray(value)) value.forEach((item, i) => walk(item, `${path}.${i}`));
+    else if (value && typeof value === "object")
+      Object.entries(value).forEach(([key, item]) => walk(item, path ? `${path}.${key}` : key));
+  };
+  walk(dict, "");
+  return out;
+};
+
+// Reconstruye un diccionario completo; lo que falte cae al texto original
+export const buildDictionary = (base: Dictionary, translated: Record<string, string>): Dictionary => {
+  const rebuild = (value: unknown, path: string): unknown => {
+    if (typeof value === "string") return typeof translated[path] === "string" ? translated[path] : value;
+    if (Array.isArray(value)) return value.map((item, i) => rebuild(item, `${path}.${i}`));
+    if (value && typeof value === "object")
+      return Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [key, rebuild(item, path ? `${path}.${key}` : key)])
+      );
+    return value;
+  };
+  return rebuild(base, "") as Dictionary;
+};

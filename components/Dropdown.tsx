@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CheckIcon, ChevronDownIcon } from "./icons";
 
 export interface DropdownOption<T extends string> {
@@ -8,6 +8,8 @@ export interface DropdownOption<T extends string> {
   label: string;
   hint?: string;
   icon?: React.ReactNode;
+  // Términos extra para la búsqueda (p. ej. el nombre del idioma en español)
+  keywords?: string;
 }
 
 interface DropdownProps<T extends string> {
@@ -16,7 +18,14 @@ interface DropdownProps<T extends string> {
   options: Array<DropdownOption<T>>;
   onChange: (value: T) => void;
   children: React.ReactNode;
+  // Con listas largas (todos los idiomas, todas las monedas) se muestra un buscador
+  searchPlaceholder?: string;
+  emptyLabel?: string;
 }
+
+// Sin tildes ni mayúsculas: "frances" encuentra "Français"
+const normalize = (text: string) =>
+  text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 // Lista desplegable compacta para el header (idioma, moneda)
 export default function Dropdown<T extends string>({
@@ -24,14 +33,27 @@ export default function Dropdown<T extends string>({
   value,
   options,
   onChange,
-  children
+  children,
+  searchPlaceholder,
+  emptyLabel
 }: DropdownProps<T>) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const listId = useId();
   const selected = options.find((option) => option.value === value);
+  const searchable = Boolean(searchPlaceholder);
+
+  const visibleOptions = useMemo(() => {
+    const q = normalize(query.trim());
+    if (!q) return options;
+    return options.filter((option) =>
+      normalize(`${option.value} ${option.label} ${option.hint ?? ""} ${option.keywords ?? ""}`).includes(q)
+    );
+  }, [options, query]);
 
   // Cerrar al tocar fuera o con Escape
   useEffect(() => {
@@ -53,24 +75,47 @@ export default function Dropdown<T extends string>({
     };
   }, [open]);
 
-  // Al abrir, enfocar la opción activa para navegar con flechas
+  // Al abrir, mostrar la opción activa y enfocar el buscador (o esa opción)
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setQuery("");
+      return;
+    }
     const index = options.findIndex((option) => option.value === value);
-    optionRefs.current[Math.max(index, 0)]?.focus();
+    const active = optionRefs.current[Math.max(index, 0)];
+    if (searchable) {
+      active?.scrollIntoView({ block: "center" });
+      searchRef.current?.focus();
+    } else {
+      active?.focus();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  const choose = (option: DropdownOption<T>) => {
+    onChange(option.value);
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
   const handleListKeyDown = (e: React.KeyboardEvent) => {
+    const count = visibleOptions.length;
     const current = optionRefs.current.findIndex((el) => el === document.activeElement);
     let next = -1;
-    if (e.key === "ArrowDown") next = (current + 1) % options.length;
-    else if (e.key === "ArrowUp") next = (current - 1 + options.length) % options.length;
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = options.length - 1;
+    if (e.key === "ArrowDown") next = (current + 1) % count;
+    else if (e.key === "ArrowUp") {
+      // Desde la primera opción se vuelve al buscador
+      if (current <= 0 && searchable) {
+        e.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+      next = (current - 1 + count) % count;
+    } else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = count - 1;
     else if (e.key === "Tab") setOpen(false);
 
-    if (next >= 0) {
+    if (next >= 0 && count > 0) {
       e.preventDefault();
       optionRefs.current[next]?.focus();
     }
@@ -106,48 +151,75 @@ export default function Dropdown<T extends string>({
 
       {open && (
         <div
-          id={listId}
-          role="listbox"
-          aria-label={label}
           onKeyDown={handleListKeyDown}
-          className="absolute right-0 top-full z-40 mt-2 w-56 origin-top-right animate-pop-in rounded-xl border border-ink-line bg-paper-card p-1.5 shadow-lg shadow-ink/10 motion-reduce:animate-none"
+          className={`absolute top-full z-40 mt-2 origin-top-right animate-pop-in rounded-xl border border-ink-line bg-paper-card p-1.5 shadow-lg shadow-ink/10 motion-reduce:animate-none ltr:right-0 rtl:left-0 ${
+            searchable ? "w-[min(18rem,calc(100vw-2rem))]" : "w-56"
+          }`}
         >
           <p className="px-2.5 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-mute">{label}</p>
-          {options.map((option, idx) => {
-            const isSelected = option.value === value;
-            return (
-              <button
-                key={option.value}
-                ref={(el) => {
-                  optionRefs.current[idx] = el;
-                }}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                onClick={() => {
-                  onChange(option.value);
-                  setOpen(false);
-                  triggerRef.current?.focus();
-                }}
-                className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink ${
-                  isSelected ? "bg-paper-deep text-ink" : "text-ink-soft hover:bg-paper"
-                }`}
-              >
-                {option.icon && (
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center text-lg">
-                    {option.icon}
-                  </span>
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className="block font-semibold leading-tight">{option.label}</span>
-                  {option.hint && (
-                    <span className="mt-0.5 block truncate text-xs text-ink-mute">{option.hint}</span>
+          {searchable && (
+            <input
+              ref={searchRef}
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  optionRefs.current[0]?.focus();
+                } else if (e.key === "Enter" && visibleOptions[0]) {
+                  e.preventDefault();
+                  choose(visibleOptions[0]);
+                }
+              }}
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
+              aria-controls={listId}
+              className="mb-1.5 w-full rounded-lg border border-ink-line bg-paper px-3 py-2 text-base text-ink placeholder:text-ink-mute focus:border-ink focus:outline-none sm:text-sm"
+            />
+          )}
+          <div
+            id={listId}
+            role="listbox"
+            aria-label={label}
+            className={searchable ? "max-h-[min(20rem,60dvh)] overflow-y-auto overscroll-contain" : undefined}
+          >
+            {visibleOptions.length === 0 && (
+              <p className="px-2.5 py-3 text-sm text-ink-mute">{emptyLabel}</p>
+            )}
+            {visibleOptions.map((option, idx) => {
+              const isSelected = option.value === value;
+              return (
+                <button
+                  key={option.value}
+                  ref={(el) => {
+                    optionRefs.current[idx] = el;
+                  }}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  onClick={() => choose(option)}
+                  className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-start text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink ${
+                    isSelected ? "bg-paper-deep text-ink" : "text-ink-soft hover:bg-paper"
+                  }`}
+                >
+                  {option.icon && (
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center text-lg">
+                      {option.icon}
+                    </span>
                   )}
-                </span>
-                {isSelected && <CheckIcon className="h-4 w-4 shrink-0 text-achiote" />}
-              </button>
-            );
-          })}
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-semibold leading-tight">{option.label}</span>
+                    {option.hint && (
+                      <span className="mt-0.5 block truncate text-xs text-ink-mute">{option.hint}</span>
+                    )}
+                  </span>
+                  {isSelected && <CheckIcon className="h-4 w-4 shrink-0 text-achiote" />}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

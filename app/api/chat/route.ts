@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 
-const LANGUAGE_NAMES: Record<string, string> = {
-  es: "español",
-  en: "English",
-  fr: "français",
-  de: "Deutsch",
-  pt: "português"
+// Nombre en inglés de cualquier idioma ("ja" → "Japanese") para el prompt
+const languageNameFor = (code: unknown) => {
+  if (typeof code !== "string" || !/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(code)) return "Spanish";
+  try {
+    return new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
 };
 
 export async function POST(req: Request) {
   try {
-    const { message, history, menu, language = "es" } = await req.json();
+    const { message, history, menu, language = "es", currency = "COP", unitsPerCOP } = await req.json();
 
     if (typeof message !== "string" || !message.trim()) {
       return NextResponse.json({ error: "Mensaje vacío." }, { status: 400 });
@@ -43,7 +45,15 @@ export async function POST(req: Request) {
     });
 
     const menuContext = JSON.stringify(menu || {}, null, 2);
-    const targetLangName = LANGUAGE_NAMES[language] || "English";
+    const targetLangName = languageNameFor(language);
+    // Moneda del comensal: cualquier código ISO con su tasa frente al peso
+    const currencyCode = typeof currency === "string" && /^[A-Z]{3}$/.test(currency) ? currency : "COP";
+    const copPerUnit =
+      typeof unitsPerCOP === "number" && unitsPerCOP > 0 ? Math.round(1 / unitsPerCOP) : null;
+    const exchangeNote =
+      currencyCode !== "COP" && copPerUnit
+        ? `El comensal ve los precios en ${currencyCode} (1 ${currencyCode} ≈ ${copPerUnit.toLocaleString("es-CO")} COP). Cuando menciones precios, da el valor en COP y su equivalente aproximado en ${currencyCode}.`
+        : "";
 
     const prompt = `Eres "SaborAI", el conserje gastronómico de Santa Marta para el restaurante "${menu?.restaurantName || 'Donde Chela'}".
 Tienes a tu disposición el siguiente menú actual en formato JSON:
@@ -52,7 +62,7 @@ ${menuContext}
 REGLAS DE ORO:
 1. IDIOMA OBLIGATORIO: Responde SIEMPRE en ${targetLangName.toUpperCase()} (a menos que el usuario explícitamente te hable en otro idioma, en cuyo caso adáptate a su idioma). Traduce o explica los ingredientes de forma clara para un turista internacional, pero mantén los nombres propios de los platos tradicionales (ej. "Cayeye", "Arroz de coco titoté", "Sierra frita").
 2. ALERGIAS Y RESTRICCIONES: Si el comensal menciona una alergia (ej. mariscos, gluten, lácteos, frutos secos) o preferencia dietética (vegetariano, vegano), NUNCA recomiendes platos con ese alérgeno y advierte si algún acompañamiento tradicional pudiera tener contaminación cruzada.
-3. PRESUPUESTO: Si el usuario indica un presupuesto máximo en COP o moneda extranjera (asume 1 USD ≈ 4.000 COP, 1 EUR ≈ 4.300 COP), asegúrate de que el plato sugerido esté dentro del presupuesto.
+3. PRESUPUESTO: Si el usuario indica un presupuesto máximo en COP o moneda extranjera (si no se indica otra tasa, asume 1 USD ≈ 4.000 COP, 1 EUR ≈ 4.300 COP), asegúrate de que el plato sugerido esté dentro del presupuesto.${exchangeNote ? ` ${exchangeNote}` : ""}
 4. CULTURA SAMARIA: Explica con orgullo y calidez los ingredientes caribeños (ej. qué es el guineo verde criollo, el coco o el patacón).
 5. FORMATO: Da una respuesta conversacional breve y entusiasta (máximo 2 párrafos). Al final de tu respuesta, si recomendaste uno o más platos específicos, añade en una línea separada exactamente esto:
 [RECOMMENDED_IDS: id1, id2] donde id1, id2 sean los IDs de los platos del JSON.

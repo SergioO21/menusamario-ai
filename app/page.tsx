@@ -12,12 +12,28 @@ import {
   UploadIcon,
   UtensilsIcon
 } from "../components/icons";
-import { I18N, LANGUAGES, LOCALES, currencyName, type LanguageCode } from "../lib/i18n";
 import {
-  COP_PER_UNIT,
-  CURRENCIES,
+  HANDWRITTEN_LANGUAGES,
+  I18N,
+  LANGUAGE_CODES,
+  buildDictionary,
+  currencyName,
+  flattenDictionary,
+  fmt,
+  isLanguageCode,
+  isRtl,
+  languageName,
+  type Dictionary,
+  type LanguageCode
+} from "../lib/i18n";
+import {
   DEFAULT_MENU,
+  FALLBACK_RATES,
   MAX_UPLOAD_MB,
+  PINNED_CURRENCIES,
+  currencyDigits,
+  currencySymbol,
+  hashString,
   isMenuData,
   type CurrencyCode,
   type MenuData
@@ -27,13 +43,38 @@ interface ChatMessage {
   sender: "user" | "ai";
   text: string;
   dishIds?: string[];
+  // El saludo se pinta con el diccionario activo, así sigue al idioma elegido
+  welcome?: boolean;
 }
 
-// Claves de localStorage: preferencias y la última carta digitalizada
+// Claves de localStorage: preferencias, la última carta digitalizada y las traducciones
 const STORAGE = {
   lang: "menusamario:lang",
   currency: "menusamario:currency",
   menu: "menusamario:menu",
+  ui: (lang: LanguageCode) => `menusamario:ui:${UI_VERSION}:${lang}`,
+  menuTranslation: (lang: LanguageCode, menu: MenuData) =>
+    `menusamario:menu-tr:${lang}:${hashString(JSON.stringify(menu))}`,
+};
+
+// Cambia cuando cambian los textos base: invalida las traducciones guardadas
+const UI_VERSION = hashString(JSON.stringify(flattenDictionary(I18N.en)));
+
+const isHandwritten = (lang: LanguageCode) =>
+  (HANDWRITTEN_LANGUAGES as readonly string[]).includes(lang);
+
+// Locale para precios y dictado: el español de la app es el de Colombia
+const localeFor = (lang: LanguageCode) => (lang === "es" ? "es-CO" : lang);
+
+const requestTranslations = async (lang: LanguageCode, entries: Record<string, string>) => {
+  const res = await fetch("/api/translate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ targetLanguage: lang, entries })
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  return (data.translations ?? {}) as Record<string, string>;
 };
 
 const readStorage = (key: string) => {
@@ -69,15 +110,21 @@ export default function Home() {
   const [currency, setCurrency] = useState<CurrencyCode>("COP");
   const [avoidedAllergens, setAvoidedAllergens] = useState<string[]>([]);
   const [vegOnly, setVegOnly] = useState(false);
+  // Unidades de cada moneda por 1 COP
+  const [rates, setRates] = useState<Record<CurrencyCode, number>>(FALLBACK_RATES);
+  const [ratesLive, setRatesLive] = useState(false);
+  // Interfaz traducida por Gemini (idiomas sin textos escritos a mano)
+  const [translatedUI, setTranslatedUI] = useState<Record<LanguageCode, Dictionary>>({});
+  // Descripciones, notas y alérgenos de la carta en el idioma activo
+  const [menuTranslation, setMenuTranslation] = useState<Record<string, string>>({});
+  const [pendingTranslations, setPendingTranslations] = useState(0);
 
-  const t = I18N[lang];
+  const t = I18N[lang] ?? translatedUI[lang] ?? I18N.en;
+  const tr = (key: string, original: string) => menuTranslation[key] ?? original;
 
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      sender: "ai",
-      text: t.welcomeMessage
-    }
+    { sender: "ai", text: "", welcome: true }
   ]);
   const [inputMessage, setInputMessage] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
@@ -105,13 +152,10 @@ export default function Home() {
 
   // Recuperar preferencias y la carta digitalizada de la visita anterior
   useEffect(() => {
-    const savedLang = readStorage(STORAGE.lang) as LanguageCode | null;
-    if (savedLang && savedLang in I18N && savedLang !== "es") {
-      setLang(savedLang);
-      setMessages([{ sender: "ai", text: I18N[savedLang].welcomeMessage }]);
-    }
-    const savedCurrency = readStorage(STORAGE.currency) as CurrencyCode | null;
-    if (savedCurrency && savedCurrency in COP_PER_UNIT) setCurrency(savedCurrency);
+    const savedLang = readStorage(STORAGE.lang);
+    if (isLanguageCode(savedLang)) setLang(savedLang);
+    const savedCurrency = readStorage(STORAGE.currency);
+    if (savedCurrency && /^[A-Z]{3}$/.test(savedCurrency)) setCurrency(savedCurrency);
     try {
       const savedMenu = JSON.parse(readStorage(STORAGE.menu) ?? "null");
       if (isMenuData(savedMenu)) {
@@ -123,9 +167,97 @@ export default function Home() {
     }
   }, []);
 
+  // Tasas de cambio en vivo para todas las monedas
   useEffect(() => {
-    document.documentElement.lang = lang;
-  }, [lang]);
+    fetch("/api/rates")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.rates && typeof data.rates === "object") {
+          setRates({ ...FALLBACK_RATES, ...data.rates });
+          setRatesLive(Boolean(data.live));
+        }
+      })
+      .catch(() => {
+        // Se mantienen las tasas de referencia
+      });
+  }, []);
+
+  // Idioma en que realmente está la interfaz (inglés mientras no llegue la traducción)
+  const uiLang = I18N[lang] || translatedUI[lang] ? lang : "en";
+  useEffect(() => {
+    document.documentElement.lang = uiLang;
+    document.documentElement.dir = isRtl(uiLang) ? "rtl" : "ltr";
+  }, [uiLang]);
+
+  // Idiomas sin textos propios: traducir la interfaz una vez y guardarla
+  useEffect(() => {
+    if (isHandwritten(lang) || translatedUI[lang]) return;
+    try {
+      const cached = JSON.parse(readStorage(STORAGE.ui(lang)) ?? "null");
+      if (cached && typeof cached === "object") {
+        setTranslatedUI((prev) => ({ ...prev, [lang]: buildDictionary(I18N.en, cached) }));
+        return;
+      }
+    } catch {
+      writeStorage(STORAGE.ui(lang), null);
+    }
+
+    let cancelled = false;
+    setPendingTranslations((n) => n + 1);
+    requestTranslations(lang, flattenDictionary(I18N.en))
+      .then((translations) => {
+        writeStorage(STORAGE.ui(lang), JSON.stringify(translations));
+        if (!cancelled) setTranslatedUI((prev) => ({ ...prev, [lang]: buildDictionary(I18N.en, translations) }));
+      })
+      .catch(() => {
+        // Sin traducción disponible: la interfaz queda en inglés
+      })
+      .finally(() => setPendingTranslations((n) => n - 1));
+    return () => {
+      cancelled = true;
+    };
+  }, [lang, translatedUI]);
+
+  // La carta está escrita en español: traducir descripciones, notas y alérgenos
+  useEffect(() => {
+    setMenuTranslation({});
+    if (lang === "es") return;
+
+    const entries: Record<string, string> = {};
+    menu.dishes.forEach((dish) => {
+      if (dish.description) entries[`d.${dish.id}.description`] = dish.description;
+      if (dish.localHighlight) entries[`d.${dish.id}.highlight`] = dish.localHighlight;
+      dish.allergens.forEach((allergen) => {
+        entries[`a.${allergen.toLowerCase()}`] = allergen.toLowerCase();
+      });
+    });
+
+    const cacheKey = STORAGE.menuTranslation(lang, menu);
+    try {
+      const cached = JSON.parse(readStorage(cacheKey) ?? "null");
+      if (cached && typeof cached === "object") {
+        setMenuTranslation(cached);
+        return;
+      }
+    } catch {
+      writeStorage(cacheKey, null);
+    }
+
+    let cancelled = false;
+    setPendingTranslations((n) => n + 1);
+    requestTranslations(lang, entries)
+      .then((translations) => {
+        writeStorage(cacheKey, JSON.stringify(translations));
+        if (!cancelled) setMenuTranslation(translations);
+      })
+      .catch(() => {
+        // Sin traducción disponible: se muestra el texto original
+      })
+      .finally(() => setPendingTranslations((n) => n - 1));
+    return () => {
+      cancelled = true;
+    };
+  }, [lang, menu]);
 
   // Con el chat abierto: marcar como leído y bajar al último mensaje
   useEffect(() => {
@@ -175,18 +307,34 @@ export default function Home() {
   );
   const hasFilters = vegOnly || avoidedAllergens.length > 0;
 
-  const priceFormatter = useMemo(
-    () =>
-      new Intl.NumberFormat(LOCALES[lang], {
-        style: "currency",
-        currency,
-        currencyDisplay: "narrowSymbol",
-        minimumFractionDigits: currency === "COP" ? 0 : 2,
-        maximumFractionDigits: currency === "COP" ? 0 : 2
-      }),
-    [lang, currency]
+  const priceFormatter = useMemo(() => {
+    const digits = currencyDigits(currency);
+    const options: Intl.NumberFormatOptions = {
+      style: "currency",
+      currency,
+      currencyDisplay: "narrowSymbol",
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    };
+    try {
+      return new Intl.NumberFormat(localeFor(lang), options);
+    } catch {
+      return new Intl.NumberFormat("en", options);
+    }
+  }, [lang, currency]);
+  const rate = rates[currency] ?? FALLBACK_RATES[currency] ?? 1;
+  const formatPrice = (cop: number) => priceFormatter.format(cop * rate);
+
+  // Todas las monedas con tasa disponible; COP, USD y EUR primero
+  const currencyCodes = useMemo(
+    () => [
+      ...PINNED_CURRENCIES,
+      ...Object.keys(rates)
+        .filter((code) => !PINNED_CURRENCIES.includes(code) && /^[A-Z]{3}$/.test(code))
+        .sort()
+    ],
+    [rates]
   );
-  const formatPrice = (cop: number) => priceFormatter.format(cop / COP_PER_UNIT[currency]);
 
   const closeChat = () => {
     setIsChatOpen(false);
@@ -201,13 +349,8 @@ export default function Home() {
   const handleLanguageChange = (newLang: LanguageCode) => {
     setLang(newLang);
     writeStorage(STORAGE.lang, newLang);
-    const newT = I18N[newLang];
-    // Si la conversación no ha empezado, reemplazar el saludo en vez de acumularlo
-    setMessages((prev) =>
-      prev.length === 1
-        ? [{ sender: "ai", text: newT.welcomeMessage }]
-        : [...prev, { sender: "ai", text: newT.welcomeMessage }]
-    );
+    // Si la conversación ya empezó, saludar de nuevo en el idioma elegido
+    setMessages((prev) => (prev.length === 1 ? prev : [...prev, { sender: "ai", text: "", welcome: true }]));
   };
 
   const handleCurrencyChange = (newCurrency: CurrencyCode) => {
@@ -253,7 +396,10 @@ export default function Home() {
     if (!text.trim() || isChatLoading) return;
 
     // El historial reciente da contexto a preguntas de seguimiento ("¿y sin lácteos?")
-    const history = messages.slice(1).slice(-8).map((m) => ({ role: m.sender, text: m.text }));
+    const history = messages
+      .filter((m) => !m.welcome)
+      .slice(-8)
+      .map((m) => ({ role: m.sender, text: m.text }));
     setMessages((prev) => [...prev, { sender: "user", text }]);
     setInputMessage("");
     setIsChatLoading(true);
@@ -262,7 +408,7 @@ export default function Home() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history, menu, language: lang })
+        body: JSON.stringify({ message: text, history, menu, language: lang, currency, unitsPerCOP: rate })
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -292,7 +438,7 @@ export default function Home() {
     }
 
     const recognition = new SpeechRecognition();
-    recognition.lang = LOCALES[lang];
+    recognition.lang = localeFor(lang);
     recognition.interimResults = false;
 
     recognition.onstart = () => setIsRecording(true);
@@ -320,8 +466,8 @@ export default function Home() {
       return;
     }
     if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
-      setParseError(t.fileTooLarge(MAX_UPLOAD_MB));
-      setParseStatus(t.fileTooLarge(MAX_UPLOAD_MB));
+      setParseError(fmt(t.fileTooLarge, { mb: MAX_UPLOAD_MB }));
+      setParseStatus(fmt(t.fileTooLarge, { mb: MAX_UPLOAD_MB }));
       return;
     }
 
@@ -377,10 +523,10 @@ export default function Home() {
         setHighlightedDishIds([]);
         clearFilters();
         writeStorage(STORAGE.menu, JSON.stringify(data));
-        setParseStatus(t.successParsed(data.dishes.length, data.restaurantName));
+        setParseStatus(fmt(t.successParsed, { n: data.dishes.length, name: data.restaurantName }));
         setMessages((prev) => [
           ...prev,
-          { sender: "ai", text: t.chatMenuLoaded(data.dishes.length, data.restaurantName) }
+          { sender: "ai", text: fmt(t.chatMenuLoaded, { n: data.dishes.length, name: data.restaurantName }) }
         ]);
         setTimeout(() => setActiveTab("turista"), 1400);
       } else {
@@ -422,7 +568,17 @@ export default function Home() {
     </nav>
   );
 
-  const activeLanguage = LANGUAGES.find((item) => item.code === lang) ?? LANGUAGES[0];
+  // Idiomas: nombre propio ("日本語") y, debajo, en el idioma activo ("Japonés")
+  const languageOptions = LANGUAGE_CODES.map((code) => {
+    const ownName = languageName(code);
+    const localName = languageName(code, lang);
+    return {
+      value: code,
+      label: ownName,
+      hint: localName !== ownName ? localName : undefined,
+      keywords: `${languageName(code, "es")} ${languageName(code, "en")}`
+    };
+  });
   const { title: restaurantTitle, place: restaurantPlace } = splitRestaurantName(menu.restaurantName);
 
   return (
@@ -449,27 +605,33 @@ export default function Home() {
               label={t.language}
               value={lang}
               onChange={handleLanguageChange}
-              options={LANGUAGES.map((item) => ({
-                value: item.code,
-                label: item.label,
-                icon: item.flag
-              }))}
+              options={languageOptions}
+              searchPlaceholder={t.search}
+              emptyLabel={t.noMatches}
             >
-              <span className="text-base leading-none">{activeLanguage.flag}</span>
-              <span className="hidden text-xs font-semibold uppercase sm:inline">{activeLanguage.code}</span>
+              {pendingTranslations > 0 && (
+                <span
+                  role="status"
+                  aria-label={t.translating}
+                  className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-achiote border-t-transparent"
+                />
+              )}
+              <span className="text-xs font-semibold uppercase">{lang}</span>
             </Dropdown>
 
             <Dropdown<CurrencyCode>
               label={t.currency}
               value={currency}
               onChange={handleCurrencyChange}
-              options={CURRENCIES.map((item) => ({
-                value: item.code,
-                label: item.code,
-                hint: currencyName(item.code, lang),
+              searchPlaceholder={t.search}
+              emptyLabel={t.noMatches}
+              options={currencyCodes.map((code) => ({
+                value: code,
+                label: code,
+                hint: currencyName(code, lang),
                 icon: (
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full border border-ink-line text-[11px] font-semibold text-ink-soft">
-                    {item.symbol}
+                  <span className="flex h-7 min-w-7 items-center justify-center rounded-full border border-ink-line px-1 text-[11px] font-semibold text-ink-soft">
+                    {currencySymbol(code, localeFor(lang))}
                   </span>
                 )
               }))}
@@ -500,15 +662,25 @@ export default function Home() {
                 <p className="mt-5 max-w-xl text-base leading-relaxed text-ink-soft sm:text-lg">{t.subtitle}</p>
               )}
               <p className="mt-6 flex flex-wrap gap-x-5 gap-y-1 text-xs font-medium uppercase tracking-[0.14em] text-ink-mute">
-                <span>{t.dishCount(menu.dishes.length)}</span>
+                <span>{fmt(menu.dishes.length === 1 ? t.dishCountOne : t.dishCountOther, { n: menu.dishes.length })}</span>
                 <span aria-hidden="true">·</span>
-                <span>{t.pricesIn(currencyName(currency, lang))}</span>
+                <span>{fmt(t.pricesIn, { currency: currencyName(currency, lang) })}</span>
+                {currency !== "COP" && ratesLive && (
+                  <a
+                    href="https://www.exchangerate-api.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="normal-case tracking-normal underline decoration-ink-line underline-offset-4 hover:text-ink"
+                  >
+                    {t.ratesSource}
+                  </a>
+                )}
               </p>
             </section>
 
             {isCustomMenu && (
               <div className="mt-6 flex flex-col gap-2 border-l-2 border-olive bg-olive-soft/60 px-4 py-3 text-sm text-ink-soft sm:flex-row sm:items-center sm:justify-between">
-                <p>{t.customMenuActive(menu.dishes.length, menu.restaurantName)}</p>
+                <p>{fmt(t.customMenuActive, { n: menu.dishes.length, name: menu.restaurantName })}</p>
                 <button
                   type="button"
                   onClick={restoreDemoMenu}
@@ -523,7 +695,7 @@ export default function Home() {
             <div className="mt-6 flex flex-wrap items-center gap-2">
               {menuAllergens.length > 0 && (
                 <>
-                  <span className="mr-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-mute">
+                  <span className="me-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-mute">
                     {t.avoid}
                   </span>
                   {menuAllergens.map((allergen) => {
@@ -540,7 +712,7 @@ export default function Home() {
                             : "border-ink-line text-ink-soft hover:border-ink-mute hover:text-ink"
                         }`}
                       >
-                        {allergen}
+                        {tr(`a.${allergen}`, allergen)}
                       </button>
                     );
                   })}
@@ -567,7 +739,7 @@ export default function Home() {
                     clearFilters();
                     setHighlightedDishIds([]);
                   }}
-                  className="ml-auto text-[13px] font-medium text-achiote underline-offset-4 hover:underline"
+                  className="ms-auto text-[13px] font-medium text-achiote underline-offset-4 hover:underline"
                 >
                   {hasFilters ? t.clearFilters : t.clearHighlight}
                 </button>
@@ -607,12 +779,14 @@ export default function Home() {
                           </div>
 
                           {dish.description && (
-                            <p className="mt-1.5 text-[0.95rem] leading-relaxed text-ink-soft">{dish.description}</p>
+                            <p className="mt-1.5 text-[0.95rem] leading-relaxed text-ink-soft">
+                              {tr(`d.${dish.id}.description`, dish.description)}
+                            </p>
                           )}
 
                           {dish.localHighlight && (
                             <p className="mt-2 font-display text-[0.95rem] italic leading-snug text-ink-mute">
-                              {dish.localHighlight}
+                              {tr(`d.${dish.id}.highlight`, dish.localHighlight)}
                             </p>
                           )}
 
@@ -628,7 +802,7 @@ export default function Home() {
                               {dish.allergens.length > 0 && (
                                 <span className="text-ink-mute">
                                   {t.contains}:{" "}
-                                  <span className="font-medium text-ink-soft">{dish.allergens.join(", ")}</span>
+                                  <span className="font-medium text-ink-soft">{dish.allergens.map((a) => tr(`a.${a.toLowerCase()}`, a)).join(", ")}</span>
                                 </span>
                               )}
                             </p>
@@ -720,7 +894,7 @@ export default function Home() {
                   <span className="block space-y-3">
                     <UploadIcon className="mx-auto h-8 w-8 text-ink-mute" />
                     <span className="block font-display text-lg">{t.uploadPrompt}</span>
-                    <span className="block text-xs text-ink-mute">{t.uploadFormats(MAX_UPLOAD_MB)}</span>
+                    <span className="block text-xs text-ink-mute">{fmt(t.uploadFormats, { mb: MAX_UPLOAD_MB })}</span>
                   </span>
                 )}
               </button>
@@ -779,7 +953,7 @@ export default function Home() {
                 type="button"
                 onClick={closeChat}
                 aria-label={t.closeChat}
-                className="-mr-1.5 flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-paper/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-paper"
+                className="-me-1.5 flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-paper/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-paper"
               >
                 <CloseIcon className="h-5 w-5" />
               </button>
@@ -803,7 +977,7 @@ export default function Home() {
                         : "rounded-bl-sm border border-ink-line bg-paper-card text-ink"
                     }`}
                   >
-                    <p className="whitespace-pre-line">{m.text}</p>
+                    <p className="whitespace-pre-line">{m.welcome ? t.welcomeMessage : m.text}</p>
                     {m.dishIds && m.dishIds.length > 0 && (
                       <button
                         type="button"
