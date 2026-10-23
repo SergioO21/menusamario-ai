@@ -14,19 +14,48 @@ export interface MenuData {
   dishes: Dish[];
 }
 
-export type CurrencyCode = "COP" | "USD" | "EUR";
+// Código ISO 4217 ("COP", "JPY"...). La lista completa llega de /api/rates
+export type CurrencyCode = string;
 
-export const CURRENCIES: Array<{ code: CurrencyCode; symbol: string }> = [
-  { code: "COP", symbol: "$" },
-  { code: "USD", symbol: "US$" },
-  { code: "EUR", symbol: "€" },
-];
+// Monedas que aparecen primero en el selector
+export const PINNED_CURRENCIES: CurrencyCode[] = ["COP", "USD", "EUR"];
 
-// Tasas de referencia (las mismas que usa el prompt del concierge)
-export const COP_PER_UNIT: Record<CurrencyCode, number> = {
+// Unidades de cada moneda por 1 COP, mientras cargan las tasas en vivo
+export const FALLBACK_RATES: Record<CurrencyCode, number> = {
   COP: 1,
-  USD: 4000,
-  EUR: 4300,
+  USD: 1 / 4000,
+  EUR: 1 / 4300,
+};
+
+// Símbolo corto de una moneda ("$", "€", "¥"...)
+export const currencySymbol = (code: CurrencyCode, locale: string) => {
+  try {
+    return (
+      new Intl.NumberFormat(locale, { style: "currency", currency: code, currencyDisplay: "narrowSymbol" })
+        .formatToParts(0)
+        .find((part) => part.type === "currency")?.value ?? code
+    );
+  } catch {
+    return code;
+  }
+};
+
+// COP y otras monedas sin centavos de uso práctico se muestran sin decimales
+export const currencyDigits = (code: CurrencyCode) => {
+  try {
+    const digits = new Intl.NumberFormat("en", { style: "currency", currency: code }).resolvedOptions()
+      .maximumFractionDigits;
+    return code === "COP" ? 0 : digits ?? 2;
+  } catch {
+    return 2;
+  }
+};
+
+// Hash corto y estable para claves de caché (carta traducida por idioma)
+export const hashString = (value: string) => {
+  let hash = 5381;
+  for (let i = 0; i < value.length; i++) hash = ((hash << 5) + hash + value.charCodeAt(i)) | 0;
+  return (hash >>> 0).toString(36);
 };
 
 // Límite de subida: Gemini acepta datos inline de hasta ~20 MB en total

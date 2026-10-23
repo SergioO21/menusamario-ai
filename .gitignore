@@ -35,3 +35,6 @@ next-env.d.ts
 # IDEs
 .idea/
 .vscode/
+
+# variables locales con claves (no subir)
+.env
