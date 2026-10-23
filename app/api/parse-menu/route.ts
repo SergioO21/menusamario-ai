@@ -73,7 +73,7 @@ const menuSchema = {
 
 export async function POST(req: Request) {
   try {
-    const { imageBase64, mimeType } = await req.json();
+    const { fileBase64, mimeType } = await req.json();
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -81,8 +81,8 @@ export async function POST(req: Request) {
       return NextResponse.json(FALLBACK_MENU);
     }
 
-    if (!imageBase64) {
-      return NextResponse.json({ error: "No image provided" }, { status: 400 });
+    if (!fileBase64) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
@@ -95,18 +95,20 @@ export async function POST(req: Request) {
       }
     });
 
-    const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z]+;base64,/, "");
+    // Soporte tanto para imágenes como para documentos PDF nativos en Gemini 1.5 Flash
+    const cleanBase64 = fileBase64.replace(/^data:[a-zA-Z0-9\/\-\+]+;base64,/, "");
+    const effectiveMimeType = mimeType || (fileBase64.startsWith("data:application/pdf") ? "application/pdf" : "image/jpeg");
 
     const prompt = `Eres un asistente experto gastronómico de Santa Marta y el Caribe Colombiano.
-Analiza esta imagen que contiene un menú físico o pizarra de un restaurante.
-Extrae detalladamente todos los platos, nombres, precios numéricos en pesos colombianos (COP), lista de alérgenos comunes (ej: mariscos, pescado, lácteos, gluten, maní, huevo), marca si es apto para vegetarianos y agrega una nota cultural breve (localHighlight) sobre los ingredientes típicos caribeños (como guineo verde, coco, patacón).`;
+Analiza este documento (que puede ser una fotografía de un menú físico o un archivo PDF digital de un restaurante).
+Extrae detalladamente todos los platos, nombres, precios numéricos en pesos colombianos (COP), lista de alérgenos comunes (ej: mariscos, pescado, lácteos, gluten, maní, huevo), marca si es apto para vegetarianos y agrega una nota cultural breve (localHighlight) sobre los ingredientes típicos caribeños (como guineo verde, coco, patacón, pescado de la bahía).`;
 
     const result = await model.generateContent([
       prompt,
       {
         inlineData: {
           data: cleanBase64,
-          mimeType: mimeType || "image/jpeg"
+          mimeType: effectiveMimeType
         }
       }
     ]);
