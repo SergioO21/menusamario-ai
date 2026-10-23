@@ -17,10 +17,10 @@ const sans = Instrument_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "MenúSamario",
+  title: "TuMenú",
   description: "Cartas digitales con IA multimodal para Santa Marta y el Caribe",
   openGraph: {
-    title: "MenúSamario",
+    title: "TuMenú",
     description: "Cartas digitales con IA multimodal para Santa Marta y el Caribe",
   },
 };

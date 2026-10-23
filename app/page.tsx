@@ -589,8 +589,8 @@ export default function Home() {
           {/* Logotipo */}
           <div className="flex min-w-0 items-baseline gap-3">
             <h1 className="font-display text-[1.45rem] leading-none tracking-tight">
-              <span className="font-normal italic text-achiote">Menú</span>
-              <span className="font-semibold">Samario</span>
+              <span className="font-normal italic text-achiote">Tu</span>
+              <span className="font-semibold">Menú</span>
             </h1>
             <p className="hidden truncate border-l border-ink-line pl-3 text-xs text-ink-mute md:block">
               {t.tagline}

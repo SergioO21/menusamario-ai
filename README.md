@@ -1,4 +1,4 @@
-# 🌴 MenúSamario AI — DevFest Santa Marta 2026
+# 🌴 TuMenú — DevFest Santa Marta 2026
 > **Build with AI Hackathon** — GDG Santa Marta & SamaTech  
 > Digitalización y Concierge Gastronómico Multimodal para el Caribe Colombiano usando **Google Gemini 1.5 Flash**.
 
@@ -10,7 +10,7 @@ En destinos turísticos como Santa Marta (Centro Histórico, Taganga, Minca, Rod
 ---
 
 ## 💡 La Solución
-**MenúSamario AI** conecta a restauranteros locales y comensales a través de Inteligencia Artificial de Google:
+**TuMenú** conecta a restauranteros locales y comensales a través de Inteligencia Artificial de Google:
 
 1. **Digitalización Instantánea (Restaurantero):** Basta con tomar una fotografía a la carta en papel o pizarra de tiza. **Gemini 1.5 Flash (Vision)** con *Structured Outputs* extrae automáticamente los platos, precios en COP, traduce alérgenos y añade notas sobre el contexto cultural samario.
 2. **SaborAI Concierge (Turista):** El comensal escanea un QR y conversa por voz o texto en cualquier idioma (inglés, francés, alemán, español). La IA recomienda platos personalizados filtrando estrictamente por alergias y presupuesto en COP/USD/EUR, e ilumina las opciones recomendadas en la carta digital.
