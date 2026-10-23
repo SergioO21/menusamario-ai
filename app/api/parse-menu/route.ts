@@ -1,68 +1,25 @@
 import { NextResponse } from "next/server";
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
-
-const FALLBACK_MENU = {
-  restaurantName: "Restaurante Donde Chela - Bahía de Taganga",
-  currency: "COP",
-  dishes: [
-    {
-      id: "1",
-      name: "Pescado Frito Sierra Tradicional",
-      description: "Sierra fresca de la bahía frita al punto, servida con arroz de coco titoté, patacón crocante y ensalada.",
-      priceCOP: 38000,
-      allergens: ["pescado"],
-      isVegetarian: false,
-      localHighlight: "Capturado en la madrugada por pescadores artesanales de Taganga."
-    },
-    {
-      id: "2",
-      name: "Cayeye Tradicional con Queso Costeño",
-      description: "Puré suave de guineo verde criollo machacado con mantequilla, coronado con queso costeño salado y hogao.",
-      priceCOP: 18000,
-      allergens: ["lácteos"],
-      isVegetarian: true,
-      localHighlight: "Plato icónico de Santa Marta y la zona bananera del Magdalena."
-    },
-    {
-      id: "3",
-      name: "Cazuela de Mariscos Samaria",
-      description: "Camarones, calamares y caracol en reducción cremosa de leche de coco fresca con toque de cilantro cimarrón.",
-      priceCOP: 45000,
-      allergens: ["mariscos", "moluscos", "lácteos"],
-      isVegetarian: false,
-      localHighlight: "Receta típica de pescadores con leche de coco recién extraída."
-    },
-    {
-      id: "4",
-      name: "Limonada de Coco Frappé",
-      description: "Bebida granizada con crema de coco natural y limón mandarino.",
-      priceCOP: 12000,
-      allergens: [],
-      isVegetarian: true,
-      localHighlight: "Bebida refrescante por excelencia para el calor de la costa."
-    }
-  ]
-};
+import { GoogleGenAI, Type } from "@google/genai";
 
 const menuSchema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
-    restaurantName: { type: SchemaType.STRING },
+    restaurantName: { type: Type.STRING },
     dishes: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          id: { type: SchemaType.STRING },
-          name: { type: SchemaType.STRING },
-          description: { type: SchemaType.STRING },
-          priceCOP: { type: SchemaType.NUMBER },
+          id: { type: Type.STRING },
+          name: { type: Type.STRING },
+          description: { type: Type.STRING },
+          priceCOP: { type: Type.NUMBER },
           allergens: {
-            type: SchemaType.ARRAY,
-            items: { type: SchemaType.STRING }
+            type: Type.ARRAY,
+            items: { type: Type.STRING }
           },
-          isVegetarian: { type: SchemaType.BOOLEAN },
-          localHighlight: { type: SchemaType.STRING }
+          isVegetarian: { type: Type.BOOLEAN },
+          localHighlight: { type: Type.STRING }
         },
         required: ["name", "priceCOP", "allergens"]
       }
@@ -77,60 +34,109 @@ export async function POST(req: Request) {
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      console.warn("No GEMINI_API_KEY found, returning fallback mock.");
-      return NextResponse.json(FALLBACK_MENU);
+      return NextResponse.json(
+        { error: "No se encontró GEMINI_API_KEY en el servidor." },
+        { status: 500 }
+      );
     }
 
     if (!fileBase64) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+      return NextResponse.json({ error: "No se proporcionó ningún archivo." }, { status: 400 });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: menuSchema as any,
-        temperature: 0.1
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
       }
     });
 
-    // Soporte tanto para imágenes como para documentos PDF nativos en Gemini 1.5 Flash
     const cleanBase64 = fileBase64.replace(/^data:[a-zA-Z0-9\/\-\+]+;base64,/, "");
     const effectiveMimeType = mimeType || (fileBase64.startsWith("data:application/pdf") ? "application/pdf" : "image/jpeg");
 
     const prompt = `Eres un asistente experto gastronómico de Santa Marta y el Caribe Colombiano.
-Analiza este documento (que puede ser una fotografía de un menú físico o un archivo PDF digital de un restaurante).
-Extrae detalladamente todos los platos, nombres, precios numéricos en pesos colombianos (COP), lista de alérgenos comunes (ej: mariscos, pescado, lácteos, gluten, maní, huevo), marca si es apto para vegetarianos y agrega una nota cultural breve (localHighlight) sobre los ingredientes típicos caribeños (como guineo verde, coco, patacón, pescado de la bahía).`;
+Analiza este documento (que puede ser una fotografía de un menú físico, pizarra o un archivo PDF digital de un restaurante).
+Extrae detalladamente TODOS los platos del menú:
+- restaurantName: Nombre del restaurante (si no aparece claramente, usa el nombre más representativo o "Restaurante Local").
+- dishes: Lista de platos con:
+  - id: Identificador único ("1", "2", etc.).
+  - name: Nombre del plato (ej: "Pescado Frito", "Arroz de Coco").
+  - description: Breve descripción de ingredientes y preparación.
+  - priceCOP: Precio en pesos colombianos como número entero (ej: si dice 35.000 o 35k, pon 35000).
+  - allergens: Lista de alérgenos comunes (ej: "pescado", "mariscos", "lácteos", "gluten", "maní", "huevo"). Si no tiene, arreglo vacío [].
+  - isVegetarian: boolean indicando si es apto para vegetarianos.
+  - localHighlight: Breve nota cultural caribeña/samaria sobre los ingredientes típicos (como guineo verde, coco, patacón, pescado de bahía).`;
 
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          data: cleanBase64,
-          mimeType: effectiveMimeType
-        }
+    const filePart = {
+      inlineData: {
+        data: cleanBase64,
+        mimeType: effectiveMimeType
       }
-    ]);
+    };
 
-    const response = await result.response;
-    const text = response.text();
-    const parsed = JSON.parse(text || "{}");
+    // Usar modelos flash disponibles con fallback automático ante picos de demanda
+    const candidateModels = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
+    let responseText: string | undefined;
+    let lastError: any = null;
 
-    if (!parsed.dishes || parsed.dishes.length === 0) {
-      return NextResponse.json(FALLBACK_MENU);
+    for (const model of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: [filePart, prompt],
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: menuSchema,
+            temperature: 0.1
+          }
+        });
+
+        if (response.text) {
+          responseText = response.text;
+          break;
+        }
+      } catch (err: any) {
+        console.warn(`Model ${model} failed, trying next candidate:`, err.message || err.status);
+        lastError = err;
+      }
+    }
+
+    if (!responseText) {
+      throw lastError || new Error("No se obtuvo respuesta de los modelos de Gemini.");
+    }
+
+    const parsed = JSON.parse(responseText);
+
+    if (!parsed.dishes || !Array.isArray(parsed.dishes) || parsed.dishes.length === 0) {
+      return NextResponse.json(
+        { error: "No se identificaron platos en el documento cargado. Intenta con una imagen más nítida o centrada." },
+        { status: 422 }
+      );
     }
 
     return NextResponse.json({
-      restaurantName: parsed.restaurantName || "Restaurante Local - Santa Marta",
+      restaurantName: parsed.restaurantName || "Restaurante Digitalizado - Santa Marta",
       currency: "COP",
       dishes: parsed.dishes.map((d: any, idx: number) => ({
-        ...d,
-        id: d.id || String(idx + 1)
+        id: String(d.id || idx + 1),
+        name: d.name || `Plato ${idx + 1}`,
+        description: d.description || "",
+        priceCOP: typeof d.priceCOP === "number" ? d.priceCOP : parseInt(d.priceCOP, 10) || 20000,
+        allergens: Array.isArray(d.allergens) ? d.allergens : [],
+        isVegetarian: Boolean(d.isVegetarian),
+        localHighlight: d.localHighlight || "Preparación tradicional samaria"
       }))
     });
   } catch (err: any) {
     console.error("Error in parse-menu API:", err);
-    return NextResponse.json(FALLBACK_MENU);
+    return NextResponse.json(
+      {
+        error: "Error al procesar el documento con IA. Intenta nuevamente en unos segundos.",
+        details: err?.message || String(err)
+      },
+      { status: 500 }
+    );
   }
 }

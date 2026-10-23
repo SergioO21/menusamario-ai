@@ -47,11 +47,11 @@ const I18N = {
     send: "Enviar",
     thinking: "SaborAI pensando...",
     adminTitle: "Digitaliza la carta de tu restaurante en segundos",
-    adminSubtitle: "Sube un archivo PDF o una fotografía de tu menú físico o pizarra. Gemini 1.5 Flash extraerá los platos, precios y alérgenos automáticamente.",
+    adminSubtitle: "Sube un archivo PDF o una fotografía de tu menú físico o pizarra. Gemini Flash extraerá los platos, precios y alérgenos automáticamente.",
     uploadPrompt: "Haz clic para subir un PDF o imagen del menú",
     uploadFormats: "Formatos admitidos: PDF, JPG, PNG • Menús digitales, volantes o cartas físicas",
-    processButton: "✨ Digitalizar con Gemini 1.5 Flash",
-    processing: "Gemini 1.5 Flash analizando documento y alérgenos...",
+    processButton: "✨ Digitalizar con Gemini Flash",
+    processing: "Gemini Flash analizando documento y alérgenos...",
     success: "¡Menú digitalizado con éxito!",
     chips: [
       { label: "🦀 Sin mariscos (<$35k COP)", prompt: "Soy alérgico a los mariscos, mi presupuesto es de $35.000 COP, ¿qué me recomiendas?" },
@@ -77,11 +77,11 @@ const I18N = {
     send: "Send",
     thinking: "SaborAI is thinking...",
     adminTitle: "Digitize your restaurant menu in seconds",
-    adminSubtitle: "Upload a PDF menu file or snap a picture of your physical chalkboard/menu. Gemini 1.5 Flash extracts dishes, prices, and allergens automatically.",
+    adminSubtitle: "Upload a PDF menu file or snap a picture of your physical chalkboard/menu. Gemini Flash extracts dishes, prices, and allergens automatically.",
     uploadPrompt: "Click to upload a PDF or Menu Image",
     uploadFormats: "Supported formats: PDF, JPG, PNG • Digital PDFs or physical photos",
-    processButton: "✨ Digitize with Gemini 1.5 Flash",
-    processing: "Gemini 1.5 Flash analyzing document & allergens...",
+    processButton: "✨ Digitize with Gemini Flash",
+    processing: "Gemini Flash analyzing document & allergens...",
     success: "Menu digitized successfully!",
     chips: [
       { label: "🦀 No shellfish (<$35k COP)", prompt: "I am allergic to shellfish, my budget is $35,000 COP, what do you recommend?" },
@@ -107,11 +107,11 @@ const I18N = {
     send: "Envoyer",
     thinking: "SaborAI réfléchit...",
     adminTitle: "Numérisez le menu de votre restaurant en quelques secondes",
-    adminSubtitle: "Téléversez un fichier PDF ou prenez une photo de votre menu papier. Gemini 1.5 Flash extrait les plats, prix et allergènes automatiquement.",
+    adminSubtitle: "Téléversez un fichier PDF ou prenez une photo de votre menu papier. Gemini Flash extrait les plats, prix et allergènes automatiquement.",
     uploadPrompt: "Cliquez pour téléverser un PDF ou une photo du menu",
     uploadFormats: "Formats pris en charge : PDF, JPG, PNG",
-    processButton: "✨ Numériser avec Gemini 1.5 Flash",
-    processing: "Gemini 1.5 Flash analyse le document et les allergènes...",
+    processButton: "✨ Numériser avec Gemini Flash",
+    processing: "Gemini Flash analyse le document et les allergènes...",
     success: "Menu numérisé avec succès !",
     chips: [
       { label: "🦀 Sans crustacés (<35k COP)", prompt: "Je suis allergique aux fruits de mer, mon budget est de 35 000 COP, que me conseillez-vous ?" },
@@ -137,11 +137,11 @@ const I18N = {
     send: "Senden",
     thinking: "SaborAI denkt nach...",
     adminTitle: "Speisekarte in Sekundenschnelle digitalisieren",
-    adminSubtitle: "Laden Sie ein PDF hoch oder fotografieren Sie Ihre Speisekarte. Gemini 1.5 Flash extrahiert Gerichte, Preise und Allergene automatisch.",
+    adminSubtitle: "Laden Sie ein PDF hoch oder fotografieren Sie Ihre Speisekarte. Gemini Flash extrahiert Gerichte, Preise und Allergene automatisch.",
     uploadPrompt: "Klicken Sie hier, um ein PDF oder Menü-Foto hochzuladen",
     uploadFormats: "Unterstützte Formate: PDF, JPG, PNG",
-    processButton: "✨ Mit Gemini 1.5 Flash digitalisieren",
-    processing: "Gemini 1.5 Flash analysiert Dokument & Allergene...",
+    processButton: "✨ Mit Gemini Flash digitalisieren",
+    processing: "Gemini Flash analysiert Dokument & Allergene...",
     success: "Menü erfolgreich digitalisiert!",
     chips: [
       { label: "🦀 Keine Meeresfrüchte (<35k COP)", prompt: "Ich bin allergisch gegen Meeresfrüchte, mein Budget ist 35.000 COP, was empfehlen Sie?" },
@@ -167,11 +167,11 @@ const I18N = {
     send: "Enviar",
     thinking: "SaborAI pensando...",
     adminTitle: "Digitalize o cardápio do seu restaurante em segundos",
-    adminSubtitle: "Envie um arquivo PDF ou foto do cardápio físico. Gemini 1.5 Flash extrai pratos, preços e alérgenos automaticamente.",
+    adminSubtitle: "Envie um arquivo PDF ou foto do cardápio físico. Gemini Flash extrai pratos, preços e alérgenos automaticamente.",
     uploadPrompt: "Clique para enviar um PDF ou imagem do cardápio",
     uploadFormats: "Formatos suportados: PDF, JPG, PNG",
-    processButton: "✨ Digitalizar com Gemini 1.5 Flash",
-    processing: "Gemini 1.5 Flash analisando documento e alérgenos...",
+    processButton: "✨ Digitalizar com Gemini Flash",
+    processing: "Gemini Flash analisando documento e alérgenos...",
     success: "Cardápio digitalizado com sucesso!",
     chips: [
       { label: "🦀 Sem frutos do mar (<$35k COP)", prompt: "Sou alérgico a frutos do mar, meu orçamento é de 35.000 COP, o que recomenda?" },
@@ -228,6 +228,8 @@ export default function Home() {
   const [lang, setLang] = useState<LanguageCode>("es");
   const [activeTab, setActiveTab] = useState<"turista" | "admin">("turista");
   const [menu, setMenu] = useState<MenuData>(DEFAULT_MENU);
+  const [isCustomMenu, setIsCustomMenu] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
   const [highlightedDishIds, setHighlightedDishIds] = useState<string[]>([]);
   const [currency, setCurrency] = useState<"COP" | "USD" | "EUR">("COP");
 
@@ -316,7 +318,13 @@ export default function Home() {
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      alert("El reconocimiento de voz requiere Chrome o Safari.");
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: "ai",
+          text: "El reconocimiento de voz no está soportado en este navegador o entorno. Puedes escribir tu consulta en el campo de texto."
+        }
+      ]);
       return;
     }
 
@@ -362,11 +370,12 @@ export default function Home() {
     }
   };
 
-  // Procesar archivo con Gemini 1.5 Flash (Vision / PDF nativo)
+  // Procesar archivo con Gemini Flash (Vision / PDF nativo)
   const handleParseMenu = async () => {
     if (!selectedFile) return;
 
     setIsParsing(true);
+    setParseError(null);
     setParseStatus(t.processing);
 
     try {
@@ -380,13 +389,28 @@ export default function Home() {
       });
 
       const data = await res.json();
-      if (data && data.dishes) {
+      if (res.ok && data && data.dishes && data.dishes.length > 0) {
         setMenu(data);
-        setParseStatus(t.success);
-        setTimeout(() => setActiveTab("turista"), 1200);
+        setIsCustomMenu(true);
+        setHighlightedDishIds([]);
+        setParseStatus(`¡Menú digitalizado con éxito! (${data.dishes.length} platos extraídos de "${data.restaurantName}")`);
+        setMessages((prev) => [
+          ...prev,
+          {
+            sender: "ai",
+            text: `🌴 ¡Carta digitalizada con éxito! Acabo de cargar ${data.dishes.length} platos de "${data.restaurantName}". Pregúntame sobre cualquier plato, ingredientes, precios o alérgenos en tu idioma.`
+          }
+        ]);
+        setTimeout(() => setActiveTab("turista"), 1400);
+      } else {
+        const errText = data?.error || "No se pudieron extraer los platos del archivo. Asegúrate de que el menú sea legible.";
+        setParseError(errText);
+        setParseStatus(errText);
       }
-    } catch (err) {
-      setParseStatus("Error al procesar el archivo. Usando menú de respaldo.");
+    } catch (err: any) {
+      const errText = "Error de red al procesar el menú. Por favor intenta de nuevo.";
+      setParseError(errText);
+      setParseStatus(errText);
     } finally {
       setIsParsing(false);
     }
@@ -495,6 +519,25 @@ export default function Home() {
                 </div>
               </div>
 
+              {isCustomMenu && (
+                <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 text-emerald-800 px-3.5 py-2.5 rounded-xl text-xs font-medium shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">✨</span>
+                    <span><strong>¡Carta digitalizada activa!</strong> {menu.dishes.length} platos cargados para <em>{menu.restaurantName}</em>.</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setMenu(DEFAULT_MENU);
+                      setIsCustomMenu(false);
+                      setHighlightedDishIds([]);
+                    }}
+                    className="text-[11px] text-teal-800 hover:text-teal-950 underline font-semibold shrink-0"
+                  >
+                    Restaurar menú demo
+                  </button>
+                </div>
+              )}
+
               {/* Lista de Platos */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -589,7 +632,7 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 text-[11px] bg-teal-800 text-teal-200 px-2.5 py-1 rounded-full font-medium">
-                  <span>Gemini 1.5 Flash</span>
+                  <span>Gemini Flash</span>
                 </div>
               </div>
 
@@ -751,7 +794,13 @@ export default function Home() {
               </button>
 
               {parseStatus && (
-                <div className="text-center text-xs font-semibold text-teal-800 bg-teal-50 py-2.5 rounded-lg border border-teal-200">
+                <div
+                  className={`text-center text-xs font-semibold py-2.5 px-3 rounded-lg border ${
+                    parseError
+                      ? "text-rose-800 bg-rose-50 border-rose-200"
+                      : "text-teal-800 bg-teal-50 border-teal-200"
+                  }`}
+                >
                   {parseStatus}
                 </div>
               )}

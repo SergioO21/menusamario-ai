@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 const LANGUAGE_NAMES: Record<string, string> = {
   es: "español",
@@ -21,11 +21,12 @@ export async function POST(req: Request) {
       });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        temperature: 0.3
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
       }
     });
 
@@ -46,9 +47,26 @@ REGLAS DE ORO:
 
 Pregunta del comensal: "${message}"`;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const rawText = response.text() || "¡Bienvenido a Santa Marta! Te recomiendo probar nuestro delicioso pescado fresco o un cayeye tradicional.";
+    const candidateModels = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
+    let rawText = "¡Bienvenido a Santa Marta! Te recomiendo probar nuestro delicioso pescado fresco o un cayeye tradicional.";
+
+    for (const model of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            temperature: 0.3
+          }
+        });
+        if (response.text) {
+          rawText = response.text;
+          break;
+        }
+      } catch (err: any) {
+        console.warn(`Chat model ${model} failed, trying next:`, err.message || err.status);
+      }
+    }
     
     // Extraer los IDs recomendados
     const match = rawText.match(/\[RECOMMENDED_IDS:\s*([^\]]+)\]/);

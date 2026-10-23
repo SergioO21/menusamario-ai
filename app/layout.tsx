@@ -2,8 +2,12 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MenúSamario AI — DevFest Santa Marta 2026",
+  title: "MenúSamario AI",
   description: "Digitalización gastronómica con IA multimodal para Santa Marta y el Caribe",
+  openGraph: {
+    title: "MenúSamario AI",
+    description: "Digitalización gastronómica con IA multimodal para Santa Marta y el Caribe",
+  },
 };
 
 export default function RootLayout({
