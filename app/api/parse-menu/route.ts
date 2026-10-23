@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 
-// Mock de respaldo inmediato por si la conexión o API Key falla durante la demo
 const FALLBACK_MENU = {
   restaurantName: "Restaurante Donde Chela - Bahía de Taganga",
   currency: "COP",
@@ -45,25 +44,25 @@ const FALLBACK_MENU = {
   ]
 };
 
-const menuSchema: Schema = {
-  type: Type.OBJECT,
+const menuSchema = {
+  type: SchemaType.OBJECT,
   properties: {
-    restaurantName: { type: Type.STRING },
+    restaurantName: { type: SchemaType.STRING },
     dishes: {
-      type: Type.ARRAY,
+      type: SchemaType.ARRAY,
       items: {
-        type: Type.OBJECT,
+        type: SchemaType.OBJECT,
         properties: {
-          id: { type: Type.STRING },
-          name: { type: Type.STRING },
-          description: { type: Type.STRING },
-          priceCOP: { type: Type.NUMBER },
+          id: { type: SchemaType.STRING },
+          name: { type: SchemaType.STRING },
+          description: { type: SchemaType.STRING },
+          priceCOP: { type: SchemaType.NUMBER },
           allergens: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING }
+            type: SchemaType.ARRAY,
+            items: { type: SchemaType.STRING }
           },
-          isVegetarian: { type: Type.BOOLEAN },
-          localHighlight: { type: Type.STRING }
+          isVegetarian: { type: SchemaType.BOOLEAN },
+          localHighlight: { type: SchemaType.STRING }
         },
         required: ["name", "priceCOP", "allergens"]
       }
@@ -86,39 +85,36 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 });
     }
 
-    const ai = new GoogleGenAI({ apiKey });
-
-    // Limpiar el encabezado data:image/...;base64, si viene incluido
-    const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z]+;base64,/, "");
-
-    const response = await ai.models.generateContent({
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
       model: "gemini-1.5-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              inlineData: {
-                data: cleanBase64,
-                mimeType: mimeType || "image/jpeg"
-              }
-            },
-            {
-              text: `Eres un asistente experto gastronómico de Santa Marta y el Caribe Colombiano.
-Analiza esta imagen que contiene un menú físico o pizarra de un restaurante.
-Extrae detalladamente todos los platos, nombres, precios numéricos en pesos colombianos (COP), lista de alérgenos comunes (ej: mariscos, pescado, lácteos, gluten, maní, huevo), marca si es apto para vegetarianos y agrega una nota cultural breve (localHighlight) sobre los ingredientes típicos caribeños (como guineo verde, coco, patacón).`
-            }
-          ]
-        }
-      ],
-      config: {
+      generationConfig: {
         responseMimeType: "application/json",
-        responseSchema: menuSchema,
+        responseSchema: menuSchema as any,
         temperature: 0.1
       }
     });
 
-    const parsed = JSON.parse(response.text || "{}");
+    const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z]+;base64,/, "");
+
+    const prompt = `Eres un asistente experto gastronómico de Santa Marta y el Caribe Colombiano.
+Analiza esta imagen que contiene un menú físico o pizarra de un restaurante.
+Extrae detalladamente todos los platos, nombres, precios numéricos en pesos colombianos (COP), lista de alérgenos comunes (ej: mariscos, pescado, lácteos, gluten, maní, huevo), marca si es apto para vegetarianos y agrega una nota cultural breve (localHighlight) sobre los ingredientes típicos caribeños (como guineo verde, coco, patacón).`;
+
+    const result = await model.generateContent([
+      prompt,
+      {
+        inlineData: {
+          data: cleanBase64,
+          mimeType: mimeType || "image/jpeg"
+        }
+      }
+    ]);
+
+    const response = await result.response;
+    const text = response.text();
+    const parsed = JSON.parse(text || "{}");
+
     if (!parsed.dishes || parsed.dishes.length === 0) {
       return NextResponse.json(FALLBACK_MENU);
     }
@@ -133,7 +129,6 @@ Extrae detalladamente todos los platos, nombres, precios numéricos en pesos col
     });
   } catch (err: any) {
     console.error("Error in parse-menu API:", err);
-    // Devolver fallback para garantizar que la demo nunca se caiga ante el jurado
     return NextResponse.json(FALLBACK_MENU);
   }
 }

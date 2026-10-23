@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export async function POST(req: Request) {
   try {
-    const { message, menu, chatHistory } = await req.json();
+    const { message, menu } = await req.json();
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -13,11 +13,17 @@ export async function POST(req: Request) {
       });
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
+      generationConfig: {
+        temperature: 0.4
+      }
+    });
 
     const menuContext = JSON.stringify(menu || {}, null, 2);
 
-    const systemPrompt = `Eres "SaborAI", el conserje gastronómico de Santa Marta para el restaurante "${menu?.restaurantName || 'Donde Chela'}".
+    const prompt = `Eres "SaborAI", el conserje gastronómico de Santa Marta para el restaurante "${menu?.restaurantName || 'Donde Chela'}".
 Tienes a tu disposición el siguiente menú actual en formato JSON:
 ${menuContext}
 
@@ -27,24 +33,13 @@ REGLAS DE ORO:
 3. PRESUPUESTO: Si el usuario indica un presupuesto máximo en COP o moneda extranjera (asume 1 USD ≈ 4.000 COP, 1 EUR ≈ 4.300 COP), asegúrate de que el plato sugerido esté dentro del presupuesto.
 4. CULTURA SAMARIA: Explica con orgullo y calidez los ingredientes caribeños (ej. qué es el cayeye, el arroz de coco titoté, la sierra o el patacón).
 5. FORMATO: Da una respuesta conversacional breve y entusiasta (máximo 2 párrafos). Al final de tu respuesta, si recomendaste uno o más platos específicos, añade en una línea separada exactamente esto:
-[RECOMMENDED_IDS: id1, id2] donde id1, id2 sean los IDs de los platos del JSON.`;
+[RECOMMENDED_IDS: id1, id2] donde id1, id2 sean los IDs de los platos del JSON.
 
-    const contents = [
-      {
-        role: "user",
-        parts: [{ text: `${systemPrompt}\n\nPregunta del comensal: "${message}"` }]
-      }
-    ];
+Pregunta del comensal: "${message}"`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash",
-      contents,
-      config: {
-        temperature: 0.4
-      }
-    });
-
-    const rawText = response.text || "¡Bienvenido a Santa Marta! Te recomiendo probar nuestro delicioso pescado fresco o un cayeye tradicional.";
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const rawText = response.text() || "¡Bienvenido a Santa Marta! Te recomiendo probar nuestro delicioso pescado fresco o un cayeye tradicional.";
     
     // Extraer los IDs recomendados
     const match = rawText.match(/\[RECOMMENDED_IDS:\s*([^\]]+)\]/);
